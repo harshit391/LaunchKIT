@@ -1,31 +1,14 @@
 import questionary
-import names
 
-user_identity = ["Yes, Sure", "Keep it Anonymous"]
+from user_utils import welcome_user
+
 tech_stacks = ["Node.js", "Flask", "React", "MERN Stack"]
 options = ["Initialize Git and GitHub", "Add Docker Support", "Generate Kubernetes Files"]
 
 def main():
     """Main Function to run the Launch KIT"""
 
-    print("\n\n")
-    print("Welcome to LaunchKIT!")
-    print("---------------------------------------------")
-
-    """Identity"""
-    identity_user = questionary.select(
-        "Would you mind sharing your name with us",
-        choices=user_identity,
-    ).ask()
-
-    user_name = names.get_first_name()
-
-    if "Yes" in identity_user:
-        user_name = input("What is your first name? ")
-        print("Your name is " + user_name)
-    else:
-        print(f"That's totally fine, we name you {user_name}")
-        print("\nHope you like it!")
+    user_name = welcome_user()
 
     print(f"\nSo Once Again ----- WELCOME TO LAUNCHKIT {user_name.upper()} ------")
 
