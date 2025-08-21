@@ -1,0 +1,5 @@
+questionary
+pygithub
+docker
+jinja2
+pytest
