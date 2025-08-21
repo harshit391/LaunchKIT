@@ -7,14 +7,19 @@ user_identity = ["Yes, Sure", "Keep it Anonymous"]
 
 def welcome_user():
     print("\n\n")
-    print("Welcome to LaunchKIT!")
-    print("---------------------------------------------")
 
-    if os.path.exists("user.txt"):
-        user_name_from_file = open("user.txt", "r")
+    msg = "Welcome to LaunchKIT!"
+    width = len(msg) + 6
+
+    print("\n╔" + "═" * width + "╗")
+    print("║" + msg.center(width) + "║")
+    print("╚" + "═" * width + "╝\n")
+
+    if os.path.exists("../user.txt"):
+        user_name_from_file = open("../user.txt", "r")
         return user_name_from_file.read()
     else:
-        user_name_from_file = open("user.txt", "w")
+        user_name_from_file = open("../user.txt", "w")
 
         """Identity"""
         identity_user = questionary.select(

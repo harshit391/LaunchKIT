@@ -1,6 +1,13 @@
 import questionary
+import tkinter as tk
+from tkinter import filedialog
 
-from user_utils import welcome_user
+from launchkit.utils.display_utils import exiting_program
+
+root = tk.Tk()
+root.withdraw()
+
+from launchkit.utils.user_utils import welcome_user
 
 tech_stacks = ["Node.js", "Flask", "React", "MERN Stack"]
 options = ["Initialize Git and GitHub", "Add Docker Support", "Generate Kubernetes Files"]
@@ -10,7 +17,17 @@ def main():
 
     user_name = welcome_user()
 
-    print(f"\nSo Once Again ----- WELCOME TO LAUNCHKIT {user_name.upper()} ------")
+    print(f"\nSo Once Again ----- WELCOME TO LAUNCHKIT {user_name.upper()} ------\n\n")
+
+    """User will choose a folder from file explorer"""
+    selected_folder = filedialog.askdirectory(title="Please choose a Folder for your project")
+
+    if selected_folder:
+        print(f"\nSelected Folder: {selected_folder}\n")
+    else:
+        print("\nNo Folder Selected\n")
+        exiting_program()
+        return
 
     """User choice"""
     tech_stack_chosen_by_user = questionary.select(
@@ -18,7 +35,11 @@ def main():
         choices=tech_stacks,
     ).ask()
 
-    print(f"Technical Stack: {tech_stack_chosen_by_user}")
+    if tech_stack_chosen_by_user not in tech_stacks:
+        exiting_program()
+        return
+
+    print(f"Technical Stack: {tech_stack_chosen_by_user}\n")
 
     """What User Want"""
     action_chosen_by_user = questionary.select(
@@ -26,18 +47,23 @@ def main():
         choices=options,
     ).ask()
 
-    print(f"User chose {action_chosen_by_user}")
+    if action_chosen_by_user not in options:
+        exiting_program()
+        return
+
+    print(f"User chose {action_chosen_by_user}\n")
 
     if "Initialize Git and GitHub" in action_chosen_by_user:
-        print("\nInitializing Git and GitHub")
+        print("\nInitializing Git and GitHub\n")
+    elif "Add Docker Support" in action_chosen_by_user:
+        print("\nAdding Docker Support\n")
+    elif "Generate Kubernetes Files" in action_chosen_by_user:
+        print("\nGenerating Kubernetes Files\n")
+    else:
+        exiting_program()
+        return
 
-    if "Add Docker Support" in action_chosen_by_user:
-        print("\nAdding Docker Support")
-
-    if "Generate Kubernetes Files" in action_chosen_by_user:
-        print("\nGenerating Kubernetes Files")
-
-    print("\nSetup complete!")
+    print("\nSetup complete!\n")
 
 if __name__ == "__main__":
     main()
