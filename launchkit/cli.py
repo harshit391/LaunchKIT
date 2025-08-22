@@ -8,7 +8,7 @@ from launchkit.modules import git_module
 root = tk.Tk()
 root.withdraw()
 
-from launchkit.utils.user_utils import welcome_user
+from launchkit.utils.user_utils import welcome_user, add_selected_folder_in_data
 
 tech_stacks = ["Node.js", "Flask", "React", "MERN Stack"]
 options = ["Initialize Git and GitHub", "Add Docker Support", "Generate Kubernetes Files"]
@@ -16,19 +16,33 @@ options = ["Initialize Git and GitHub", "Add Docker Support", "Generate Kubernet
 def main():
     """Main Function to run the Launch KIT"""
 
-    user_name = welcome_user()
+    data = welcome_user()
+
+    user_name = data["user_name"]
 
     print(f"\nSo Once Again ----- WELCOME TO LAUNCHKIT {user_name.upper()} ------\n\n")
 
-    """User will choose a folder from file explorer"""
-    selected_folder = filedialog.askdirectory(title="Please choose a Folder for your project")
+    selected_folder = ""
 
-    if selected_folder:
+    try:
+        selected_folder = data["selected_folder"]
         print(f"\nSelected Folder: {selected_folder}\n")
-    else:
-        print("\nNo Folder Selected\n")
-        exiting_program()
-        return
+    except KeyError:
+        """User will choose a folder from file explorer"""
+        selected_folder = filedialog.askdirectory(title="Please choose a Folder for your project")
+
+        if selected_folder:
+            data["selected_folder"] = selected_folder
+            if add_selected_folder_in_data(data):
+                print(f"\nSelected Folder: {selected_folder}\n")
+            else:
+                print(f"\nNo Folder Selected: {selected_folder}\n")
+                exiting_program()
+                return
+        else:
+            print("\nNo Folder Selected\n")
+            exiting_program()
+            return
 
     """User choice"""
     tech_stack_chosen_by_user = questionary.select(
@@ -58,8 +72,14 @@ def main():
         print("\nInitializing Git and GitHub\n")
 
         git_module.add_git_ignore_file(selected_folder)
-        if git_module.initialize_git_repo(project_path=selected_folder):
-            git_module.create_initial_commit(project_path=selected_folder)
+
+        if git_module.initialize_git_repo(selected_folder):
+            if not git_module.create_initial_commit(selected_folder):
+                exiting_program()
+                return
+        else:
+            exiting_program()
+            return
 
     elif "Add Docker Support" in action_chosen_by_user:
         print("\nAdding Docker Support\n")

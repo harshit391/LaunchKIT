@@ -1,5 +1,5 @@
 def exiting_program():
-    print("\n Exiting Program \n")
+    print("Exiting Program....")
 
     msg = "Thanks for Visiting!"
     width = len(msg) + 6
