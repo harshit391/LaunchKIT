@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import filedialog
 
 from launchkit.utils.display_utils import exiting_program
+from launchkit.modules import git_module
 
 root = tk.Tk()
 root.withdraw()
@@ -55,6 +56,11 @@ def main():
 
     if "Initialize Git and GitHub" in action_chosen_by_user:
         print("\nInitializing Git and GitHub\n")
+
+        git_module.add_git_ignore_file(selected_folder)
+        if git_module.initialize_git_repo(project_path=selected_folder):
+            git_module.create_initial_commit(project_path=selected_folder)
+
     elif "Add Docker Support" in action_chosen_by_user:
         print("\nAdding Docker Support\n")
     elif "Generate Kubernetes Files" in action_chosen_by_user:
