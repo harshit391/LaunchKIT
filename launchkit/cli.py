@@ -13,7 +13,7 @@ from launchkit.utils.display_utils import (
 )
 from launchkit.modules import git_module
 from launchkit.utils.que import Question
-from launchkit.utils.user_utils import welcome_user
+from launchkit.utils.user_utils import welcome_user, create_backup, add_data_to_db
 
 # Initialize Tk root hidden (Question may use CLI, but we keep this ready)
 root = tk.Tk()
@@ -283,28 +283,37 @@ def main():
 
     # Step 1: Project type
     ptype = choose_project_type()
+    data["project_type"] = ptype
     rich_message(f"Project type selected: {ptype}")
 
     # Step 2: Stack under that type
     stack = choose_stack(ptype)
+    data["project_stack"] = stack
     boxed_message(f"Tech stack selected: {stack}")
 
     # Initialize Git early so generators can commit their work too
     setup_git(folder)
+    data["git_setup"] = True
 
     # Step 3: Add-ons
     addons = choose_addons()
     if addons:
         arrow_message(f"Add-ons selected: {', '.join(addons)}")
+        data["addons"] = addons
     else:
         arrow_message("No add-ons selected.")
+        data["addons"] = []
 
     # Step 4: Scaffold project then apply add-ons
     run_scaffolding(stack, folder)
+    data["stack_scaffolding"] = True
+
     apply_addons(addons, folder)
+    data["addons_scaffolding"] = True
+
+    add_data_to_db(data, str(folder))
 
     status_message("Setup complete! Happy building 🚀")
-
 
 if __name__ == "__main__":
     main()

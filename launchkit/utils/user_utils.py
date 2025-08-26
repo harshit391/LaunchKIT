@@ -76,20 +76,7 @@ def welcome_user():
             data = json.load(file)
         return data
 
-    # ========== Step 1: Ask for identity ==========
-    identity_user = Question("Would you mind sharing your name with us?", user_identity).ask()
-    user_name = names.get_first_name()  # default anonymous name
-
-    if "Yes" in identity_user:
-        user_name = getpass.getuser()
-        rich_message("Your name is " + user_name)
-    else:
-        rich_message(f"That's totally fine, we name you {user_name}")
-        arrow_message("Hope you like it!")
-
-    data["user_name"] = user_name
-
-    # ========== Step 2: Ask for folder ==========
+    # ========== Step 1: Ask for folder (first, so we can check for backups) ==========
     arrow_message("Now please select a folder for your project setup")
 
     # Initialize tkinter root (hidden)
@@ -106,6 +93,34 @@ def welcome_user():
         rich_message("Invalid folder! Please restart and select a valid directory.", "yellow")
         exit(1)
 
+    # ====== Check if backup folder exists in this directory ======
+    backup_folder = Path(selected_folder) / "launchkit_backup"
+    if backup_folder.exists() and any(backup_folder.iterdir()):
+        arrow_message("Backup folder detected. It seems data.json was deleted.")
+        restore_choice = Question(
+            "Do you want to restore from a previous backup?",
+            ["Yes, restore", "No, start fresh"]
+        ).ask()
+
+        if "Yes" in restore_choice:
+            restored = restore_backup(selected_folder)
+            if restored:
+                with open("data.json", "r") as file:
+                    data = json.load(file)
+                return data
+
+    # ========== Step 2: Ask for identity ==========
+    identity_user = Question("Would you mind sharing your name with us?", user_identity).ask()
+    user_name = names.get_first_name()  # default anonymous name
+
+    if "Yes" in identity_user:
+        user_name = getpass.getuser()
+        rich_message("Your name is " + user_name)
+    else:
+        rich_message(f"That's totally fine, we name you {user_name}")
+        arrow_message("Hope you like it!")
+
+    data["user_name"] = user_name
     data["selected_folder"] = selected_folder
     arrow_message(f"Selected Folder: {selected_folder}")
 
@@ -120,7 +135,6 @@ def welcome_user():
     create_backup(selected_folder)
 
     return data
-
 
 def add_selected_folder_in_data(data):
     """Update data.json with selected folder if valid and create a backup."""
