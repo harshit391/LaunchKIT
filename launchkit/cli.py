@@ -11,7 +11,7 @@ from launchkit.utils.display_utils import (
     status_message,
     rich_message,
 )
-from launchkit.modules import git_module
+from launchkit.core import git_tools
 from launchkit.utils.que import Question
 from launchkit.utils.user_utils import welcome_user, create_backup, add_data_to_db
 
@@ -99,13 +99,13 @@ def handle_user_data() -> Tuple[dict, Path]:
 def setup_git(folder: Path):
     """Initialize Git in the project folder."""
     progress_message("Initializing Git and GitHub...")
-    git_module.add_git_ignore_file(folder)
+    git_tools.add_git_ignore_file(folder)
 
-    if not git_module.initialize_git_repo(folder):
+    if not git_tools.initialize_git_repo(folder):
         exiting_program()
         sys.exit(1)
 
-    if not git_module.create_initial_commit(folder):
+    if not git_tools.create_initial_commit(folder):
         exiting_program()
         sys.exit(1)
 
