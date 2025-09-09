@@ -7,7 +7,7 @@
 1. [About the Project](#1-about-the-project)
 2. [Getting Started](#2-getting-started)
 3. [Usage](#3-usage)
-4. [Natural Language Commands](#4-natural-language-commands)
+4. [Easy English Commands](#4-easy-english-commands)
 5. [Project Scope & Roadmap](#5-project-scope--roadmap)
 6. [Built With](#6-built-with)
 7. [Acknowledgments](#7-acknowledgments)
@@ -25,9 +25,9 @@ This tool guides developers through an **interactive, menu-driven wizard**, allo
 * Configure optional **add-ons** like Docker, Kubernetes, CI/CD pipelines, linting/formatting, or unit testing.
 * Initialize Git and GitHub integration automatically.
 
-LaunchKIT scaffolds project structures, generates Dockerfiles and Kubernetes manifests, initializes version control, and even creates a customized `README` file.  
+LaunchKIT scaffolds project structures, generates Dockerfiles and Kubernetes manifests, initializes version control, and even creates a customized `README` file.
 
-What sets LaunchKIT apart is its ability to understand and respond to **natural language input**, bridging the gap between infrastructure and intuition.
+What sets LaunchKIT apart is its ability to accept **simple English-like commands** that map directly to DevOps actions.
 
 ---
 
@@ -37,7 +37,7 @@ LaunchKIT runs directly on your local machine. You will need Python installed to
 
 ### Prerequisites
 
-* [Python 3.8+](https://www.python.org/downloads/)
+* [Python 3.10+](https://www.python.org/downloads/)
 * [Git](https://git-scm.com/)
 
 ### Installation
@@ -47,6 +47,7 @@ LaunchKIT runs directly on your local machine. You will need Python installed to
    ```bash
    git clone [your_github_repo_url]
    cd LaunchKIT
+   ```
 
 2. **Create a virtual environment:**
 
@@ -70,17 +71,17 @@ LaunchKIT runs directly on your local machine. You will need Python installed to
 4. **Install dependencies:**
 
    ```bash
-   pip install -r requirements.txt
+   pip install -e .
    ```
 
 ---
 
 ## 3. Usage
 
-Run the LaunchKIT CLI in interactive mode:
+Run the LaunchKIT CLI in `(venv)` mode:
 
 ```bash
-python cli.py
+launchkit
 ```
 
 ### Wizard Flow
@@ -115,15 +116,29 @@ python cli.py
 
 ---
 
-## 4. Natural Language Commands
+## 4. Easy English Commands
 
-A core feature of LaunchKIT is its natural language command engine, which translates human-readable commands into executable DevOps actions.
+Instead of full natural language processing, LaunchKIT uses **predefined, English-like commands** that feel natural but are mapped internally to precise CLI actions.
 
 Examples:
 
-* "Deploy this app with 3 replicas" → *Translates into `kubectl apply` with replica count set to 3.*
-* "Scale down to 1 instance" → *Adjusts replica count in Kubernetes deployment.*
-* "Build image with tag v1.0" → *Translates into `docker build -t app:v1.0`.*
+* `CREATE MERN PROJECT` → Start scaffolding a MERN project.
+* `UPDATE DOCKER CONTAINER` → List available containers, prompt user to select one, then ask what aspect to update.
+* `DELETE PROJECT` → Show currently running projects under LaunchKIT and delete the selected one.
+
+### Modes of Operation
+
+1. **Just Do**
+
+   * User types the command in plain English.
+   * LaunchKIT executes the action directly.
+
+2. **Learn (Future Scope)**
+
+   * User enters the command in plain English.
+   * LaunchKIT shows the equivalent CLI command.
+   * It explains how the command works and prompts the user to run it manually.
+   * This helps users gradually learn the correct CLI syntax while still getting the work done.
 
 ---
 
@@ -133,16 +148,16 @@ Examples:
 
 * An interactive CLI for multi-level tech stack and add-on selection.
 * Auto-generated folder structure and boilerplate code.
-* Dockerfile and Kubernetes YAML generation via templates or natural language.
+* Dockerfile and Kubernetes YAML generation via templates.
 * Git initialization and GitHub repository creation.
-* Natural language-based deployment actions.
+* English-like predefined command execution for automation.
 * `README` generation to explain the automated infrastructure.
 
 ### Roadmap
 
 * **Progress Report I:** Core CLI wizard, Git & GitHub integration, Docker automation, and README generation.
-* **Progress Report II:** Kubernetes deployment, natural language command engine, CI/CD and testing add-ons.
-* **Final Project:** Full-scale testing, bug fixing, documentation, and demo.
+* **Progress Report II:** Kubernetes deployment, command mapping engine, CI/CD and testing add-ons.
+* **Final Project:** Full-scale testing, bug fixing, documentation, and demo with Learn mode.
 
 ---
 
@@ -156,6 +171,7 @@ Examples:
 * `docker` Python SDK - Docker automation
 * `pygithub` - GitHub API integration
 * `jinja2` - README and YAML template rendering
+* `rich` - Text formatting for command line
 
 ---
 

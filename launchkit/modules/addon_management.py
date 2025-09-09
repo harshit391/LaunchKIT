@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 from launchkit.utils.display_utils import *
-from launchkit.utils.enum_utils import ADDON_DISPATCH
+
 from launchkit.utils.que import Question
 from launchkit.utils.user_utils import add_data_to_db
 
@@ -392,6 +392,7 @@ if __name__ == '__main__':
 
 
 def apply_addons(addons: List[str], folder: Path, stack: str):
+    from launchkit.utils.enum_utils import ADDON_DISPATCH
     """Apply selected add-ons with progress tracking."""
     if not addons:
         arrow_message("No add-ons to apply.")
@@ -415,6 +416,7 @@ def apply_addons(addons: List[str], folder: Path, stack: str):
 
 
 def add_new_addons(data, folder):
+    from launchkit.utils.enum_utils import ADDON_DISPATCH
     """Add new add-ons to existing project."""
     current_addons = data.get("addons", [])
     available_addons = [addon for addon in ADDON_DISPATCH.keys()

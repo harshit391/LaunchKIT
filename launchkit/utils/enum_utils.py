@@ -1,5 +1,5 @@
-from typing import Callable
-from launchkit.modules.addon_management import *
+from typing import Callable, List, Dict
+from launchkit.modules.addon_management import enable_ci, enable_tests, enable_lint_format
 from launchkit.utils.interactive_docker_k8s import enable_docker, enable_k8s
 from launchkit.utils.scaffold_utils import *
 
@@ -33,6 +33,54 @@ STACK_CATALOG: Dict[str, List[str]] = {
     ],
 }
 
+# STACK_CATALOG: Dict[str, List[str]] = {
+#     "Frontend only": [
+#         "React (Vite)",
+#         "React (Next.js - Static UI)",
+#         "React (Next.js - SSR)",
+#         "Vue.js (Vite)",
+#         "Nuxt.js (Vue + SSR/SSG)",
+#         "Angular",
+#         "Svelte (Vite)",
+#         "SvelteKit",
+#     ],
+#     "Backend only": [
+#         "Node.js (Express)",
+#         "Fastify (Node.js)",
+#         "NestJS (Node.js - TypeScript)",
+#         "Flask (Python)",
+#         "Django (Python)",
+#         "Spring Boot (Java)",
+#         "Ruby on Rails",
+#         "Go (Gin/Fiber)",
+#         "ASP.NET Core (C#)",
+#     ],
+#     "Fullstack": [
+#         "MERN (Mongo + Express + React + Node)",
+#         "PERN (Postgres + Express + React + Node)",
+#         "MEAN (Mongo + Express + Angular + Node)",
+#         "MEVN (Mongo + Express + Vue + Node)",
+#         "JAMstack (Static + APIs + CDN)",
+#         "Flask + React",
+#         "Django + React",
+#         "Django + Vue",
+#         "Rails + React",
+#         "Rails + Hotwire/Turbo",
+#         "Next.js + Prisma + Postgres",
+#         "tRPC + Next.js + TypeScript",
+#         "Blitz.js (Fullstack Next.js)",
+#         "Remix (React Fullstack Framework)",
+#         "OpenAI Demo (API + minimal UI)",
+#     ],
+#     "Other / Custom": [
+#         "Empty Project (just Git + README)",
+#         "Monorepo (Nx / Turborepo)",
+#         "Microservices (Custom Setup)",
+#         "Serverless (AWS Lambda + API Gateway)",
+#         "Provide custom instructions at runtime",
+#     ],
+# }
+#
 # Optional add-ons configurable per project
 ADDONS: List[str] = [
     "Add Docker Support",

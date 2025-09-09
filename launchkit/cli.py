@@ -19,6 +19,3 @@ def main():
     except Exception as e:
         status_message(f"Unexpected error: {e}", False)
         cleanup_processes()
-
-if __name__ == "__main__":
-    main()

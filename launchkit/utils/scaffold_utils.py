@@ -155,6 +155,7 @@ def scaffold_openai_sdk(folder: Path):
     except subprocess.CalledProcessError as e:
         status_message(f"Failed to scaffold OpenAI SDK project: {e}", False)
 
+""" Scaffolding OpenAI SDK Project """
 
 def scaffold_empty_project():
     arrow_message("Creating empty project layout...")
@@ -164,3 +165,4 @@ def scaffold_empty_project():
 def scaffold_custom_runtime():
     arrow_message("Enter custom instructions for your project (recording in README)...")
     # TODO
+
