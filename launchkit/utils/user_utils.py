@@ -1,17 +1,19 @@
 import getpass
-import os
 import json
-import names
+import os
 import shutil
-from pathlib import Path
+import sys
 from datetime import datetime
-from launchkit.utils.display_utils import boxed_message, rich_message, arrow_message, status_message
+from pathlib import Path
+from typing import Tuple
+
+import names
+
+from launchkit.utils.display_utils import boxed_message, rich_message, arrow_message, status_message, exiting_program
 from launchkit.utils.que import Question
 
 # Possible user choices for identity
 user_identity = ["Yes, Sure", "Keep it Anonymous"]
-
-
 
 
 def get_base_launchkit_folder():
@@ -256,3 +258,40 @@ def add_selected_folder_in_data(data):
         return False
 
     return add_data_to_db(data, selected_folder)
+
+def ensure_folder_exists(path: Path):
+    """Ensure the project folder exists, create if missing."""
+    if not path.exists():
+        status_message(f"Folder {path} doesn't exist. Creating it...", False)
+        path.mkdir(parents=True, exist_ok=True)
+
+
+def handle_user_data() -> Tuple[dict, Path]:
+    """Fetch user data from welcome_user() and validate it."""
+    try:
+        data = welcome_user()  # Now returns project data with project-specific folder
+        if not data:
+            status_message("Failed to load or create project data.", False)
+            exiting_program()
+            sys.exit(1)
+
+        user_name = data["user_name"]
+        project_name = data.get("project_name", "Unknown Project")
+        folder = Path(data["selected_folder"])
+
+        boxed_message(f"Welcome to LaunchKIT, {user_name.upper()}!")
+        arrow_message(f"Project: {project_name}")
+        arrow_message(f"Project Folder: {folder}")
+
+        ensure_folder_exists(folder)
+
+        return data, folder
+
+    except KeyError as e:
+        status_message(f"Corrupt project data detected. Missing key: {e.args[0]}", False)
+        exiting_program()
+        sys.exit(1)
+    except Exception as e:
+        status_message(f"Unexpected error while loading project data: {e}", False)
+        exiting_program()
+        sys.exit(1)

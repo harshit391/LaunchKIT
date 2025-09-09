@@ -1,6 +1,6 @@
-from launchkit.utils.display_utils import *
 import os
 
+from launchkit.utils.display_utils import *
 from launchkit.utils.que import Question
 from launchkit.utils.user_utils import add_data_to_db
 
@@ -44,7 +44,7 @@ FLASK_ENV=development
     status_message("✅ Production configuration created!")
 
 
-def deploy_with_docker(data, folder):
+def deploy_with_docker(folder):
     """Deploy using Docker."""
     progress_message("Deploying with Docker...")
     os.system(f"cd {folder} && docker-compose up -d --build")
@@ -63,11 +63,9 @@ def view_project_summary(folder):
         status_message("Project summary not found", False)
 
 
-def deploy_to_kubernetes(data, folder):
+def deploy_to_kubernetes(folder):
     """Deploy application to Kubernetes."""
     progress_message("Deploying to Kubernetes...")
-
-    stack = data.get("project_stack", "")
 
     # Check if k8s manifests exist
     k8s_dir = folder / "k8s"
@@ -89,7 +87,7 @@ def deploy_to_kubernetes(data, folder):
         status_message(f"❌ Kubernetes deployment failed: {e}", False)
 
 
-def setup_automated_deployment(data, folder):
+def setup_automated_deployment(folder):
     """Setup automated deployment with CI/CD."""
     progress_message("Setting up automated deployment...")
 
@@ -114,12 +112,12 @@ def setup_automated_deployment(data, folder):
     elif "production" in selected:
         add_production_deployment(folder)
     elif "secrets" in selected:
-        show_secrets_guide(folder)
+        show_secrets_guide()
     elif "notifications" in selected:
         add_deployment_notifications(folder)
 
 
-def show_manual_deployment_guide(data, folder):
+def show_manual_deployment_guide(data):
     """Display manual deployment guide based on stack."""
     stack = data.get("project_stack", "")
 
@@ -299,7 +297,7 @@ def add_production_deployment(folder):
         status_message("✅ Production deployment added to CI!")
 
 
-def show_secrets_guide(folder):
+def show_secrets_guide():
     """Show guide for setting up GitHub secrets."""
     guide = """
 ## GitHub Secrets Setup Guide

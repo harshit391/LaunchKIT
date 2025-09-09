@@ -17,7 +17,8 @@ def boxed_message(msg: str):
 def arrow_message(step: str):
     print(f"\n➡️  {step}\n")
 
-import time, sys
+import sys
+import time
 
 def progress_message(msg: str):
     sys.stdout.write(f"{msg}")

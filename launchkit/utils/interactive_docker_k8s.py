@@ -1,7 +1,8 @@
 
 from pathlib import Path
-from launchkit.utils.que import Question
+
 from launchkit.utils.display_utils import arrow_message, status_message, boxed_message
+from launchkit.utils.que import Question
 
 
 def enable_docker(folder: Path, stack: str):
@@ -19,15 +20,15 @@ def enable_docker(folder: Path, stack: str):
     if any(tech in stack for tech in ["Node.js", "React", "MERN", "PERN"]):
         available_bases = base_images["Node.js"]
         default_port = "3000"
-        default_cmd = '["npm", "start"]'
+        '["npm", "start"]'
     elif "Flask" in stack or "Python" in stack:
         available_bases = base_images["Python"]
         default_port = "5000"
-        default_cmd = '["python", "app.py"]'
+        '["python", "app.py"]'
     else:
         available_bases = base_images["Node.js"] + base_images["Python"]
         default_port = "8080"
-        default_cmd = '["npm", "start"]'
+        '["npm", "start"]'
 
     # Ask for base image
     base_image = Question("Select Docker base image:", available_bases).ask()
@@ -180,7 +181,7 @@ services:
             service = Question("Select service to add:", services).ask()
             if "Done" in service:
                 break
-            compose_content += add_service_to_compose(service, port)
+            compose_content += add_service_to_compose(service)
             if service in services:
                 services.remove(service)
 
@@ -208,7 +209,7 @@ __pycache__
     arrow_message("Files created: Dockerfile, docker-compose.yml, .dockerignore")
 
 
-def add_service_to_compose(service: str, app_port: str) -> str:
+def add_service_to_compose(service: str) -> str:
     """Add additional services to docker-compose configuration."""
     if service == "PostgreSQL":
         return """  postgres:
@@ -275,7 +276,7 @@ volumes:
     return ""
 
 
-def enable_k8s(folder: Path, stack: str):
+def enable_k8s(folder: Path):
     """Interactive Kubernetes configuration based on user preferences."""
     boxed_message("☸️ Kubernetes Configuration Setup")
 

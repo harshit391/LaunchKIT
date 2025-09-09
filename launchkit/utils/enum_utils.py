@@ -1,4 +1,6 @@
-from typing import Dict, List, Callable
+from typing import Callable
+from launchkit.modules.addon_management import *
+from launchkit.utils.interactive_docker_k8s import enable_docker, enable_k8s
 from launchkit.utils.scaffold_utils import *
 
 PROJECT_TYPES: List[str] = [
@@ -53,3 +55,13 @@ SCAFFOLDERS: Dict[str, Callable[[Path], None]] = {
     "Empty Project (just Git + README)": scaffold_empty_project,
     "Provide custom instructions at runtime": scaffold_custom_runtime,
 }
+
+# Updated ADDON_DISPATCH with new functions
+ADDON_DISPATCH: Dict[str, Callable[[Path, str], None]] = {
+    "Add Docker Support": enable_docker,
+    "Add Kubernetes Support": enable_k8s,
+    "Add CI (GitHub Actions)": enable_ci,
+    "Add Linting & Formatter": enable_lint_format,
+    "Add Unit Testing Skeleton": enable_tests,
+}
+

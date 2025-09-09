@@ -1,7 +1,23 @@
 import os
 import subprocess
+import sys
+from pathlib import Path
 
-from launchkit.utils.display_utils import arrow_message, status_message
+from launchkit.utils.display_utils import arrow_message, status_message, progress_message, exiting_program
+
+
+def setup_git(folder: Path):
+    """Initialize Git in the project folder."""
+    progress_message("Initializing Git and GitHub...")
+    add_git_ignore_file(folder)
+
+    if not initialize_git_repo(folder):
+        exiting_program()
+        sys.exit(1)
+
+    if not create_initial_commit(folder):
+        exiting_program()
+        sys.exit(1)
 
 
 def initialize_git_repo(project_path):
