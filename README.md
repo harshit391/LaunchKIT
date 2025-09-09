@@ -45,7 +45,7 @@ LaunchKIT runs directly on your local machine. You will need Python installed to
 1. **Clone the repository:**
 
    ```bash
-   git clone [your_github_repo_url]
+   git clone https://github.com/harshit391/LaunchKIT.git
    cd LaunchKIT
    ```
 

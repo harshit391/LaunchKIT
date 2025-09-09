@@ -120,7 +120,7 @@ def run_server_background(command, folder, data, server_url):
                 time.sleep(3)
 
                 if process.poll() is None:  # Process is running
-                    status_message("✅ Development server started successfully!", True)
+                    status_message("Development server started successfully!", True)
                     arrow_message(f"Process ID: {process.pid}")
                     arrow_message(f"Server URL: {server_url}")
                     rich_message("Use 'Manage Running Services' to control the server")
@@ -156,7 +156,7 @@ def run_server_background(command, folder, data, server_url):
         server_management_menu(data, folder)
 
     except Exception as e:
-        status_message(f"❌ Failed to start development server: {e}", False)
+        status_message(f"Failed to start development server: {e}", False)
 
 
 def run_server_foreground(command, folder):
@@ -173,9 +173,9 @@ def run_server_foreground(command, folder):
         else:
             status_message(f"Development server exited with code {result.returncode}", False)
     except KeyboardInterrupt:
-        status_message("\n✅ Development server stopped by user", True)
+        status_message("\nDevelopment server stopped by user", True)
     except Exception as e:
-        status_message(f"❌ Error running development server: {e}", False)
+        status_message(f"Error running development server: {e}", False)
 
 
 def run_server_new_terminal(command, folder):
@@ -220,11 +220,11 @@ def run_server_new_terminal(command, folder):
             if not terminal_opened:
                 raise FileNotFoundError("No suitable terminal emulator found")
 
-        status_message("✅ Development server opened in new terminal window", True)
+        status_message("Development server opened in new terminal window", True)
         arrow_message("The server is running independently of LaunchKIT")
 
     except Exception as e:
-        status_message(f"❌ Failed to open new terminal: {e}", False)
+        status_message(f"Failed to open new terminal: {e}", False)
         status_message("Falling back to background execution...", True)
         time.sleep(2)
         run_server_background(command, folder, {}, "http://localhost:3000")
@@ -234,11 +234,11 @@ def server_management_menu(data, folder):
     """Menu to manage running development server."""
     while True:
         # Check if server is still running
-        server_status = "❌ Not Running"
+        server_status = "Not Running"
         if 'dev_server' in running_processes:
             process_info = running_processes['dev_server']
             if process_info['process'].poll() is None:
-                server_status = f"✅ Running (PID: {process_info['process'].pid})"
+                server_status = f"Running (PID: {process_info['process'].pid})"
 
         boxed_message(f"Development Server Management - {server_status}")
 
@@ -274,18 +274,18 @@ def check_server_status():
         process = process_info['process']
 
         if process.poll() is None:
-            status_message("✅ Development server is running", True)
+            status_message("Development server is running", True)
             arrow_message(f"Project: {process_info.get('project_name', 'Unknown')}")
             arrow_message(f"Process ID: {process.pid}")
             arrow_message(f"Server URL: {process_info.get('url', 'Unknown')}")
             arrow_message(f"Working Directory: {process_info.get('folder', 'Unknown')}")
             rich_message(f"Command: {' '.join(process_info.get('command', []))}")
         else:
-            status_message("❌ Development server process has stopped", False)
+            status_message("Development server process has stopped", False)
             # Clean up dead process
             del running_processes['dev_server']
     else:
-        status_message("❌ No development server process found", False)
+        status_message("No development server process found", False)
 
 
 def open_browser_from_menu():
@@ -307,9 +307,9 @@ def open_browser_url(url):
     """Open the specified URL in the default browser."""
     try:
         webbrowser.open(url)
-        status_message(f"✅ Opening browser at {url}", True)
+        status_message(f"Opening browser at {url}", True)
     except Exception as e:
-        status_message(f"❌ Failed to open browser: {e}", False)
+        status_message(f"Failed to open browser: {e}", False)
         arrow_message(f"Please manually open: {url}")
 
 
@@ -336,19 +336,19 @@ def stop_development_server():
         # Wait up to 5 seconds for graceful shutdown
         try:
             process.wait(timeout=5)
-            status_message("✅ Development server stopped gracefully", True)
+            status_message("Development server stopped gracefully", True)
         except subprocess.TimeoutExpired:
             # Force kill if it doesn't respond
             rich_message("Server didn't respond to graceful shutdown, force stopping...")
             process.kill()
             process.wait()
-            status_message("🔶 Development server force stopped", True)
+            status_message("Development server force stopped", True)
 
         # Clean up
         del running_processes['dev_server']
 
     except Exception as e:
-        status_message(f"❌ Error stopping server: {e}", False)
+        status_message(f"Error stopping server: {e}", False)
 
 
 def restart_development_server(data, folder):
@@ -366,7 +366,7 @@ def restart_development_server(data, folder):
 
 def show_project_info(data, folder):
     """Display current project information."""
-    boxed_message("📋 Project Information")
+    boxed_message("Project Information")
     arrow_message(f"Name: {data.get('project_name', 'Unknown')}")
     arrow_message(f"Type: {data.get('project_type', 'Unknown')}")
     arrow_message(f"Stack: {data.get('project_stack', 'Unknown')}")

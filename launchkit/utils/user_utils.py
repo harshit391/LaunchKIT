@@ -173,7 +173,7 @@ def load_existing_project(project_name):
 
         # Show current project status
         if data.get("setup_complete", False):
-            arrow_message("✅ Project setup is complete")
+            arrow_message("Project setup is complete")
             if data.get("project_type"):
                 arrow_message(f"Project Type: {data.get('project_type')}")
             if data.get("project_stack"):
@@ -181,7 +181,7 @@ def load_existing_project(project_name):
             if data.get("addons"):
                 arrow_message(f"Add-ons: {', '.join(data.get('addons', []))}")
         else:
-            arrow_message("⚠️ Project setup is incomplete")
+            arrow_message("Project setup is incomplete")
 
         return data
 
@@ -239,7 +239,7 @@ def add_data_to_db(data: dict, selected_folder: str):
         with open(data_file, "w") as f:
             json.dump(data, f, indent=4)
 
-        arrow_message("Project data updated successfully ✅")
+        arrow_message("Project data updated successfully")
 
         # Create a backup after updating
         create_backup(project_folder)

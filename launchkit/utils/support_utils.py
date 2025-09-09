@@ -41,14 +41,14 @@ FLASK_ENV=development
 """
     (folder / ".env.example").write_text(env_template)
 
-    status_message("✅ Production configuration created!")
+    status_message("Production configuration created!")
 
 
 def deploy_with_docker(folder):
     """Deploy using Docker."""
     progress_message("Deploying with Docker...")
     os.system(f"cd {folder} && docker-compose up -d --build")
-    status_message("✅ Application deployed with Docker!")
+    status_message("Application deployed with Docker!")
 
 
 def view_project_summary(folder):
@@ -76,7 +76,7 @@ def deploy_to_kubernetes(folder):
     try:
         # Apply Kubernetes manifests
         os.system(f"kubectl apply -f {k8s_dir}/")
-        status_message("✅ Application deployed to Kubernetes!")
+        status_message("Application deployed to Kubernetes!")
 
         # Show deployment status
         rich_message("Checking deployment status...")
@@ -84,7 +84,7 @@ def deploy_to_kubernetes(folder):
         os.system("kubectl get services")
 
     except Exception as e:
-        status_message(f"❌ Kubernetes deployment failed: {e}", False)
+        status_message(f"Kubernetes deployment failed: {e}", False)
 
 
 def setup_automated_deployment(folder):
@@ -219,13 +219,13 @@ def update_dependencies(data, folder):
         else:
             status_message("requirements.txt not found", False)
 
-    status_message("✅ Dependencies updated!")
+    status_message("Dependencies updated!")
 
 
 def reset_project_config(data, folder):
     """Reset project configuration."""
     warning = Question(
-        "⚠️ This will reset all project configuration. Are you sure?",
+        "This will reset all project configuration. Are you sure?",
         ["Yes, reset configuration", "Cancel"]
     ).ask()
 
@@ -245,7 +245,7 @@ def reset_project_config(data, folder):
     # Save reset data
     add_data_to_db(data, str(folder))
 
-    status_message("✅ Project configuration reset!")
+    status_message("Project configuration reset!")
     rich_message("Run LaunchKIT again to reconfigure your project.")
 
 
@@ -271,7 +271,7 @@ def add_staging_deployment(folder):
     if ci_file.exists():
         with open(ci_file, 'a') as f:
             f.write(staging_config)
-        status_message("✅ Staging deployment added to CI!")
+        status_message("Staging deployment added to CI!")
 
 
 def add_production_deployment(folder):
@@ -294,7 +294,7 @@ def add_production_deployment(folder):
     if ci_file.exists():
         with open(ci_file, 'a') as f:
             f.write(production_config)
-        status_message("✅ Production deployment added to CI!")
+        status_message("Production deployment added to CI!")
 
 
 def show_secrets_guide():

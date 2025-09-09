@@ -226,13 +226,13 @@ def handle_existing_project(data, folder):
 
     # Show next steps menu
     next_steps_menu = [
-        "🚀 Run Development Server",
-        "🏗️  Build for Production",
-        "🧪 Run Tests",
-        "📦 Deploy Application",
-        "⚙️  Project Management",
-        "🔧 Manage Running Services",
-        "❌ Exit"
+        "Run Development Server",
+        "Build for Production",
+        "Run Tests",
+        "Deploy Application",
+        "Project Management",
+        "Manage Running Services",
+        "Exit"
     ]
 
     while True:
@@ -309,12 +309,12 @@ def build_production(data, folder):
         try:
             result = subprocess.run(["npm", "run", "build"], cwd=folder, capture_output=True, text=True)
             if result.returncode == 0:
-                status_message("✅ Production build completed successfully!", True)
+                status_message("Production build completed successfully!", True)
                 arrow_message("Build files are typically in the 'build' or 'dist' folder")
             else:
-                status_message(f"❌ Build failed: {result.stderr}", False)
+                status_message(f"Build failed: {result.stderr}", False)
         except Exception as e:
-            status_message(f"❌ Build error: {e}", False)
+            status_message(f"Build error: {e}", False)
 
     elif "Flask" in stack:
         rich_message("Preparing Flask for production...")
@@ -326,11 +326,11 @@ def build_production(data, folder):
             result = subprocess.run(["python", "manage.py", "collectstatic", "--noinput"], cwd=folder,
                                     capture_output=True, text=True)
             if result.returncode == 0:
-                status_message("✅ Static files collected for production!", True)
+                status_message("Static files collected for production!", True)
             else:
-                status_message(f"❌ Static collection failed: {result.stderr}", False)
+                status_message(f"Static collection failed: {result.stderr}", False)
         except Exception as e:
-            status_message(f"❌ Production setup error: {e}", False)
+            status_message(f"Production setup error: {e}", False)
     else:
         status_message(f"Production build not configured for {stack}", False)
         arrow_message("You can manually build your project in the project folder")
@@ -366,20 +366,20 @@ def run_tests(data, folder):
             return
 
         if result.returncode == 0:
-            status_message("✅ All tests passed!", True)
+            status_message("All tests passed!", True)
             if result.stdout:
                 rich_message("Test output (last few lines):")
                 lines = result.stdout.strip().split('\n')[-5:]  # Show last 5 lines
                 for line in lines:
                     arrow_message(line)
         else:
-            status_message("❌ Some tests failed!", False)
+            status_message("Some tests failed!", False)
             if result.stderr:
                 rich_message("Error output:")
                 arrow_message(result.stderr.strip())
 
     except Exception as e:
-        status_message(f"❌ Error running tests: {e}", False)
+        status_message(f"Error running tests: {e}", False)
 
 
 def update_dependencies(data, folder):
@@ -393,9 +393,9 @@ def update_dependencies(data, folder):
             rich_message("Updating npm dependencies...")
             result = subprocess.run(["npm", "update"], cwd=folder, capture_output=True, text=True)
             if result.returncode == 0:
-                status_message("✅ npm dependencies updated successfully!", True)
+                status_message("npm dependencies updated successfully!", True)
             else:
-                status_message(f"❌ npm update failed: {result.stderr}", False)
+                status_message(f"npm update failed: {result.stderr}", False)
 
         elif any(tech in stack for tech in ["Flask", "Python"]):
             if (folder / "requirements.txt").exists():
@@ -403,23 +403,23 @@ def update_dependencies(data, folder):
                 result = subprocess.run(["pip", "install", "--upgrade", "-r", "requirements.txt"], cwd=folder,
                                         capture_output=True, text=True)
                 if result.returncode == 0:
-                    status_message("✅ pip dependencies updated successfully!", True)
+                    status_message("pip dependencies updated successfully!", True)
                 else:
-                    status_message(f"❌ pip update failed: {result.stderr}", False)
+                    status_message(f"pip update failed: {result.stderr}", False)
             else:
                 status_message("requirements.txt not found", False)
         else:
             status_message("Dependency update not configured for this stack", False)
 
     except Exception as e:
-        status_message(f"❌ Error updating dependencies: {e}", False)
+        status_message(f"Error updating dependencies: {e}", False)
 
 
 def view_project_summary(folder):
     """Display project summary."""
     summary_file = folder / "PROJECT_SUMMARY.md"
     if summary_file.exists():
-        boxed_message("📋 Project Summary")
+        boxed_message("Project Summary")
         try:
             content = summary_file.read_text()
             # Show first part of the summary
@@ -456,9 +456,9 @@ def open_project_folder(folder):
         else:  # Linux
             subprocess.run(["xdg-open", str(folder)])
 
-        status_message(f"✅ Opened project folder: {folder}", True)
+        status_message(f"Opened project folder: {folder}", True)
     except Exception as e:
-        status_message(f"❌ Failed to open folder: {e}", False)
+        status_message(f"Failed to open folder: {e}", False)
         arrow_message(f"Please manually navigate to: {folder}")
 
 
@@ -466,7 +466,7 @@ def reset_project_config(data, folder):
     """Reset project configuration."""
     project_name = data.get("project_name", "Unknown")
 
-    boxed_message("⚠️  Reset Project Configuration")
+    boxed_message("Reset Project Configuration")
     rich_message("This will:")
     arrow_message("• Remove LaunchKIT-specific configuration files")
     arrow_message("• Keep your source code intact")
@@ -504,7 +504,7 @@ def reset_project_config(data, folder):
                 status_message(f"Failed to remove {file_name}: {e}", False)
 
         if removed_files:
-            status_message("✅ Project configuration reset successfully!", True)
+            status_message("Project configuration reset successfully!", True)
             for file in removed_files:
                 arrow_message(f"Removed: {file}")
         else:
@@ -552,12 +552,12 @@ gunicorn==21.2.0
 '''
             req_file.write_text(basic_requirements)
 
-        status_message("✅ Flask production configuration created!", True)
+        status_message("Flask production configuration created!", True)
         arrow_message("Created: config.py")
         arrow_message("Updated: requirements.txt")
 
     except Exception as e:
-        status_message(f"❌ Failed to create Flask production config: {e}", False)
+        status_message(f"Failed to create Flask production config: {e}", False)
 
 
 def deploy_app(data, folder):

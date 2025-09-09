@@ -7,7 +7,7 @@ from launchkit.utils.que import Question
 
 def enable_docker(folder: Path, stack: str):
     """Interactive Docker configuration based on user preferences."""
-    boxed_message("🐳 Docker Configuration Setup")
+    boxed_message("Docker Configuration Setup")
 
     # Base image selection
     base_images = {

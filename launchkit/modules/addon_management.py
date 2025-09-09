@@ -9,7 +9,7 @@ from launchkit.utils.user_utils import add_data_to_db
 
 def choose_addons() -> List[str]:
     """Choose add-ons with better categorization."""
-    boxed_message("🔧 Available Add-ons")
+    boxed_message("Available Add-ons")
 
     # Group add-ons by category
     containerization_addons = ["Add Docker Support", "Add Kubernetes Support"]
@@ -434,5 +434,5 @@ def add_new_addons(data, folder):
         apply_addons([new_addon], folder, stack)
         data["addons"].append(new_addon)
         add_data_to_db(data, str(folder))
-        status_message(f"✅ {new_addon} added successfully!")
+        status_message(f"{new_addon} added successfully!")
 
