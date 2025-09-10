@@ -192,6 +192,7 @@ def load_existing_project(project_name):
 
 def welcome_user():
     """Handles user onboarding with project selection (start new or continue)."""
+
     print("\n\n")
     msg = "Welcome to LaunchKIT!"
     width = len(msg) + 6

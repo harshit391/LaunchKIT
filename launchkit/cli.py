@@ -19,3 +19,19 @@ def main():
     except Exception as e:
         status_message(f"Unexpected error: {e}", False)
         cleanup_processes()
+
+def main_for_cli():
+    try:
+        data, folder = handle_user_data()
+
+        # Check if project is already configured
+        if data.get("setup_complete", False):
+            handle_existing_project(data, folder)
+        else:
+            setup_new_project(data, folder)
+    except KeyboardInterrupt:
+        cleanup_processes()
+        rich_message("\nGoodbye! 👋")
+    except Exception as e:
+        status_message(f"Unexpected error: {e}", False)
+        cleanup_processes()
