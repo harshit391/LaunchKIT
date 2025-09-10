@@ -166,7 +166,7 @@ def setup_new_project(data, folder):
     try:
         ptype = choose_project_type()
         data["project_type"] = ptype
-        rich_message(f"Project type selected: {ptype}")
+        boxed_message(f"Project type selected: {ptype}")
 
         # Step 2: Stack under that type
         stack = choose_stack(ptype)
@@ -229,7 +229,7 @@ def handle_existing_project(data, folder):
 
     # Show current server status if any
     if 'dev_server' in running_processes and running_processes['dev_server']['process'].poll() is None:
-        rich_message("Development server is currently running")
+        status_message("Development server is currently running")
 
     # Show next steps menu
     next_steps_menu = [
@@ -265,11 +265,11 @@ def handle_existing_project(data, folder):
         elif "Delete Project" in action:
             scaffold_project_complete_delete(folder)
             cleanup_processes()
-            rich_message("Project deletion complete!")
+            status_message("Project deletion complete!")
             break
         elif "Exit" in action:
             cleanup_processes()
-            rich_message("Happy coding! 🚀")
+            rich_message("Happy coding! 🚀", False)
             break
 
 
@@ -318,7 +318,7 @@ def build_production(data, folder):
     progress_message(f"Building {project_name} for production...")
 
     if any(tech in stack for tech in ["React", "Node.js", "MERN", "PERN"]):
-        rich_message("Building React/Node.js application...")
+        progress_message("Building React/Node.js application...")
         try:
             result = subprocess.run(["npm", "run", "build"], cwd=folder, capture_output=True, text=True)
             if result.returncode == 0:
@@ -330,11 +330,11 @@ def build_production(data, folder):
             status_message(f"Build error: {e}", False)
 
     elif "Flask" in stack:
-        rich_message("Preparing Flask for production...")
+        progress_message("Preparing Flask for production...")
         create_flask_production_config(folder)
 
     elif "Django" in stack:
-        rich_message("Preparing Django for production...")
+        progress_message("Preparing Django for production...")
         try:
             result = subprocess.run(["python", "manage.py", "collectstatic", "--noinput"], cwd=folder,
                                     capture_output=True, text=True)
@@ -381,14 +381,14 @@ def run_tests(data, folder):
         if result.returncode == 0:
             status_message("All tests passed!", True)
             if result.stdout:
-                rich_message("Test output (last few lines):")
+                boxed_message("Test output (last few lines):")
                 lines = result.stdout.strip().split('\n')[-5:]  # Show last 5 lines
                 for line in lines:
                     arrow_message(line)
         else:
             status_message("Some tests failed!", False)
             if result.stderr:
-                rich_message("Error output:")
+                status_message("Error output: ", False)
                 arrow_message(result.stderr.strip())
 
     except Exception as e:
@@ -403,7 +403,7 @@ def update_dependencies(data, folder):
 
     try:
         if any(tech in stack for tech in ["React", "Node.js", "MERN", "PERN"]):
-            rich_message("Updating npm dependencies...")
+            progress_message("Updating npm dependencies...")
             result = subprocess.run(["npm", "update"], cwd=folder, capture_output=True, text=True)
             if result.returncode == 0:
                 status_message("npm dependencies updated successfully!", True)
@@ -412,7 +412,7 @@ def update_dependencies(data, folder):
 
         elif any(tech in stack for tech in ["Flask", "Python"]):
             if (folder / "requirements.txt").exists():
-                rich_message("Updating pip dependencies...")
+                progress_message("Updating pip dependencies...")
                 result = subprocess.run(["pip", "install", "--upgrade", "-r", "requirements.txt"], cwd=folder,
                                         capture_output=True, text=True)
                 if result.returncode == 0:
@@ -440,7 +440,7 @@ def view_project_summary(folder):
             for line in lines:
                 if line.strip():
                     if line.startswith('#'):
-                        rich_message(line)
+                        rich_message(line, False)
                     else:
                         print(line)
 
@@ -480,7 +480,7 @@ def reset_project_config(data, folder):
     project_name = data.get("project_name", "Unknown")
 
     boxed_message("Reset Project Configuration")
-    rich_message("This will:")
+    boxed_message("This will: ")
     arrow_message("• Remove LaunchKIT-specific configuration files")
     arrow_message("• Keep your source code intact")
     arrow_message("• Allow you to reconfigure the project from scratch")
@@ -523,7 +523,7 @@ def reset_project_config(data, folder):
         else:
             status_message("No configuration files found to remove", True)
 
-        rich_message("You can run LaunchKIT again to reconfigure this project")
+        boxed_message("You can run LaunchKIT again to reconfigure this project")
         arrow_message("Your source code and dependencies remain unchanged")
     else:
         status_message("Configuration reset cancelled", True)

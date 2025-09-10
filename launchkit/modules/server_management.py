@@ -163,7 +163,7 @@ def run_dev_server(data, folder):
 
     if not server_config['command']:
         status_message(f"Development server command not configured for {stack}", False)
-        rich_message("You can manually start your development server in the project folder")
+        arrow_message("You can manually start your development server in the project folder")
         arrow_message(f"Project folder: {folder}")
 
         # Offer manual command input
@@ -177,8 +177,8 @@ def run_dev_server(data, folder):
         else:
             return
 
-    rich_message(f"Detected command: {' '.join(server_config['command'])}")
-    rich_message(f"Server URL: {server_config['url']}")
+    arrow_message(f"Detected command: {' '.join(server_config['command'])}")
+    arrow_message(f"Server URL: {server_config['url']}")
 
     # Offer different ways to run the server
     run_options = [
@@ -243,7 +243,7 @@ def run_server_background(server_config, data):
                     status_message("Development server started successfully!", True)
                     arrow_message(f"Process ID: {process.pid}")
                     arrow_message(f"Server URL: {server_url}")
-                    rich_message("Use 'Manage Running Services' to control the server")
+                    arrow_message("Use 'Manage Running Services' to control the server")
 
                     # Ask if user wants to open browser
                     open_browser_choice = Question("Would you like to open the application in your browser?",
@@ -287,7 +287,7 @@ def run_server_foreground(server_config):
 
     boxed_message("⚠️  Server will run in foreground")
     arrow_message("Press Ctrl+C to stop the server and return to LaunchKIT")
-    rich_message("Starting in 3 seconds...")
+    progress_message("Starting in 3 seconds...")
     time.sleep(3)
 
     try:
@@ -427,7 +427,7 @@ def check_server_status():
             arrow_message(f"Process ID: {process.pid}")
             arrow_message(f"Server URL: {process_info.get('url', 'Unknown')}")
             arrow_message(f"Working Directory: {process_info.get('folder', 'Unknown')}")
-            rich_message(f"Command: {' '.join(process_info.get('command', []))}")
+            rich_message(f"Command: {' '.join(process_info.get('command', []))}", False)
 
             # Show uptime
             try:
@@ -468,11 +468,11 @@ def show_server_logs():
         if process.stdout and process.stdout.readable():
             # This is a simplified approach - in a real implementation,
             # you might want to continuously capture output in a separate thread
-            rich_message("Live output capture is not implemented yet.")
-            rich_message("Check your terminal where you started the server for logs.")
+            status_message("Live output capture is not implemented yet.", False)
+            arrow_message("Check your terminal where you started the server for logs.")
         else:
-            rich_message("No output stream available.")
-            rich_message("The server might be logging to files or stdout is redirected.")
+            status_message("No output stream available.", False)
+            arrow_message("The server might be logging to files or stdout is redirected.")
 
     except Exception as e:
         status_message(f"Error reading logs: {e}", False)
@@ -541,7 +541,7 @@ def stop_development_server():
             status_message("Development server stopped gracefully", True)
         except subprocess.TimeoutExpired:
             # Force kill if it doesn't respond
-            rich_message("Server didn't respond to graceful shutdown, force stopping...")
+            status_message("Server didn't respond to graceful shutdown, force stopping...", False)
             process.kill()
             process.wait()
             status_message("Development server force stopped", True)
@@ -584,24 +584,24 @@ def show_project_info(data, folder):
 
     # Check if server is running
     if 'dev_server' in running_processes and running_processes['dev_server']['process'].poll() is None:
-        rich_message("Development server is currently running")
+        status_message("Development server is currently running")
         server_info = running_processes['dev_server']
         arrow_message(f"Server URL: {server_info.get('url', 'Unknown')}")
         arrow_message(f"Process ID: {server_info['process'].pid}")
     else:
-        rich_message("Development server is not running")
+        status_message("Development server is not running", False)
 
 
 # Enhanced cleanup function to handle processes on exit
 def cleanup_processes():
     """Clean up any running processes before exit."""
     if running_processes:
-        rich_message("Cleaning up running processes...")
+        progress_message("Cleaning up running processes...")
         for name, process_info in running_processes.items():
             try:
                 process = process_info['process'] if isinstance(process_info, dict) else process_info
                 if process.poll() is None:
-                    rich_message(f"Stopping {name}...")
+                    progress_message(f"Stopping {name}...")
                     try:
                         process.terminate()
                         process.wait(timeout=3)
@@ -619,9 +619,9 @@ atexit.register(cleanup_processes)
 
 # Handle Ctrl+C gracefully
 def signal_handler(_sig, _frame):
-    rich_message("\nReceived interrupt signal. Cleaning up...")
+    progress_message("\nReceived interrupt signal. Cleaning up...")
     cleanup_processes()
-    rich_message("Goodbye! 👋")
+    rich_message("Goodbye! 👋", False)
     sys.exit(0)
 
 
@@ -792,7 +792,7 @@ def run_dev_server(data, folder):
 
     if not server_config['command']:
         status_message(f"Development server command not configured for {stack}", False)
-        rich_message("You can manually start your development server in the project folder")
+        arrow_message("You can manually start your development server in the project folder")
         arrow_message(f"Project folder: {folder}")
 
         # Offer manual command input
@@ -806,8 +806,8 @@ def run_dev_server(data, folder):
         else:
             return
 
-    rich_message(f"Detected command: {' '.join(server_config['command'])}")
-    rich_message(f"Server URL: {server_config['url']}")
+    arrow_message(f"Detected command: {' '.join(server_config['command'])}")
+    arrow_message(f"Server URL: {server_config['url']}")
 
     # Offer different ways to run the server
     run_options = [
@@ -872,7 +872,7 @@ def run_server_background(server_config, data):
                     status_message("Development server started successfully!", True)
                     arrow_message(f"Process ID: {process.pid}")
                     arrow_message(f"Server URL: {server_url}")
-                    rich_message("Use 'Manage Running Services' to control the server")
+                    arrow_message("Use 'Manage Running Services' to control the server")
 
                     # Ask if user wants to open browser
                     open_browser_choice = Question("Would you like to open the application in your browser?",
@@ -916,7 +916,7 @@ def run_server_foreground(server_config):
 
     boxed_message("⚠️  Server will run in foreground")
     arrow_message("Press Ctrl+C to stop the server and return to LaunchKIT")
-    rich_message("Starting in 3 seconds...")
+    progress_message("Starting in 3 seconds...")
     time.sleep(3)
 
     try:
@@ -1056,7 +1056,7 @@ def check_server_status():
             arrow_message(f"Process ID: {process.pid}")
             arrow_message(f"Server URL: {process_info.get('url', 'Unknown')}")
             arrow_message(f"Working Directory: {process_info.get('folder', 'Unknown')}")
-            rich_message(f"Command: {' '.join(process_info.get('command', []))}")
+            arrow_message(f"Command: {' '.join(process_info.get('command', []))}")
 
             # Show uptime
             try:
@@ -1097,11 +1097,11 @@ def show_server_logs():
         if process.stdout and process.stdout.readable():
             # This is a simplified approach - in a real implementation,
             # you might want to continuously capture output in a separate thread
-            rich_message("Live output capture is not implemented yet.")
-            rich_message("Check your terminal where you started the server for logs.")
+            status_message("Live output capture is not implemented yet.", False)
+            arrow_message("Check your terminal where you started the server for logs.")
         else:
-            rich_message("No output stream available.")
-            rich_message("The server might be logging to files or stdout is redirected.")
+            status_message("No output stream available.", False)
+            arrow_message("The server might be logging to files or stdout is redirected.")
 
     except Exception as e:
         status_message(f"Error reading logs: {e}", False)
@@ -1170,7 +1170,7 @@ def stop_development_server():
             status_message("Development server stopped gracefully", True)
         except subprocess.TimeoutExpired:
             # Force kill if it doesn't respond
-            rich_message("Server didn't respond to graceful shutdown, force stopping...")
+            progress_message("Server didn't respond to graceful shutdown, force stopping...")
             process.kill()
             process.wait()
             status_message("Development server force stopped", True)
@@ -1213,19 +1213,19 @@ def show_project_info(data, folder):
 
     # Check if server is running
     if 'dev_server' in running_processes and running_processes['dev_server']['process'].poll() is None:
-        rich_message("Development server is currently running")
+        status_message("Development server is currently running")
         server_info = running_processes['dev_server']
         arrow_message(f"Server URL: {server_info.get('url', 'Unknown')}")
         arrow_message(f"Process ID: {server_info['process'].pid}")
     else:
-        rich_message("Development server is not running")
+        status_message("Development server is not running", False)
 
 
 # Enhanced cleanup function to handle processes on exit
 def cleanup_processes():
     """Clean up any running processes before exit."""
     if running_processes:
-        rich_message("Cleaning up running processes...")
+        progress_message("Cleaning up running processes...")
         for name, process_info in running_processes.items():
             try:
                 process = process_info['process'] if isinstance(process_info, dict) else process_info
@@ -1248,9 +1248,9 @@ atexit.register(cleanup_processes)
 
 # Handle Ctrl+C gracefully
 def signal_handler(_sig, _frame):
-    rich_message("\nReceived interrupt signal. Cleaning up...")
+    rich_message("\nReceived interrupt signal. Cleaning up...", False)
     cleanup_processes()
-    rich_message("Goodbye! 👋")
+    rich_message("Goodbye! 👋", False)
     sys.exit(0)
 
 

@@ -8,17 +8,21 @@ def exiting_program():
     print("║" + msg.center(width) + "║")
     print("╚" + "═" * width + "╝\n")
 
+
 def boxed_message(msg: str):
     border = "─" * (len(msg) + 4)
     print(f"\n┌{border}┐")
     print(f"│  {msg}  │")
     print(f"└{border}┘\n")
 
+
 def arrow_message(step: str):
     print(f"\n➡️  {step}\n")
 
+
 import sys
 import time
+
 
 def progress_message(msg: str):
     sys.stdout.write(f"{msg}")
@@ -29,13 +33,16 @@ def progress_message(msg: str):
         sys.stdout.flush()
     print(" Done!")
 
+
 from rich.console import Console
 from rich.panel import Panel
 
 console = Console()
 
-def rich_message(msg: str, style="bold green", show: bool = True):
-    console.print(Panel(f"{"You chose: " if show else ""}{msg}", style=style, expand=False))
+
+def rich_message(msg: str, show: bool = True, style="bold green"):
+    console.print(Panel(f"\n{"You chose: " if show else ""}{msg}", style=style, expand=False))
+
 
 # Example
 def status_message(task: str, success=True):

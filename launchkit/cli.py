@@ -30,7 +30,7 @@ def main():
                 setup_new_project(data, folder)
     except KeyboardInterrupt:
         cleanup_processes()
-        rich_message("\nGoodbye! 👋")
+        rich_message("\nGoodbye! 👋", False)
     except Exception as e:
         status_message(f"Unexpected error: {e}", False)
         cleanup_processes()
@@ -46,7 +46,7 @@ def main_for_cli():
             setup_new_project(data, folder)
     except KeyboardInterrupt:
         cleanup_processes()
-        rich_message("\nGoodbye! 👋")
+        rich_message("\nGoodbye! 👋", False)
     except Exception as e:
         status_message(f"Unexpected error: {e}", False)
         cleanup_processes()

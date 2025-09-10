@@ -246,7 +246,7 @@ def reset_project_config(data, folder):
     add_data_to_db(data, str(folder))
 
     status_message("Project configuration reset!")
-    rich_message("Run LaunchKIT again to reconfigure your project.")
+    rich_message("Run LaunchKIT again to reconfigure your project.", False)
 
 
 # Helper functions for automated deployment

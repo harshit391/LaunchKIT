@@ -114,9 +114,9 @@ def create_new_project():
 
     if "Yes" in identity_user:
         user_name = getpass.getuser()
-        rich_message(f"Your name is {user_name}")
+        rich_message(f"Your name is {user_name}", False)
     else:
-        rich_message(f"That's totally fine, we name you {user_name}")
+        rich_message(f"That's totally fine, we name you {user_name}", False)
         arrow_message("Hope you like it!")
 
     # Create initial data structure
@@ -220,7 +220,7 @@ def welcome_user():
             return create_new_project()
     else:
         # No existing projects, start new
-        rich_message("No existing projects found. Let's create your first project!")
+        rich_message("No existing projects found. Let's create your first project!", False)
         return create_new_project()
 
 

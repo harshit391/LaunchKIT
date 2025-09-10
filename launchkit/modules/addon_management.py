@@ -18,21 +18,21 @@ def choose_addons() -> List[str]:
     chosen: List[str] = []
 
     # Ask about containerization
-    rich_message("Containerization & Orchestration")
+    boxed_message("Containerization & Orchestration")
     for addon in containerization_addons:
         ans = Question(f"Would you like to enable: {addon}?", ["Yes", "No"]).ask()
         if ans == "Yes":
             chosen.append(addon)
 
     # Ask about CI/CD
-    rich_message("CI/CD Pipeline")
+    boxed_message("CI/CD Pipeline")
     for addon in ci_cd_addons:
         ans = Question(f"Would you like to enable: {addon}?", ["Yes", "No"]).ask()
         if ans == "Yes":
             chosen.append(addon)
 
     # Ask about code quality
-    rich_message("Code Quality & Testing")
+    boxed_message("Code Quality & Testing")
     for addon in code_quality_addons:
         ans = Question(f"Would you like to enable: {addon}?", ["Yes", "No"]).ask()
         if ans == "Yes":
@@ -400,7 +400,7 @@ def apply_addons(addons: List[str], folder: Path, stack: str):
     progress_message(f"Applying {len(addons)} add-on(s)...")
 
     for i, addon in enumerate(addons, 1):
-        rich_message(f"[{i}/{len(addons)}] Configuring: {addon}")
+        rich_message(f"[{i}/{len(addons)}] Configuring: {addon}", False)
         fn = ADDON_DISPATCH.get(addon)
         if fn:
             try:
