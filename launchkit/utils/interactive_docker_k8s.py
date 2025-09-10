@@ -34,12 +34,12 @@ def enable_docker(folder: Path, stack: str):
     base_image = Question("Select Docker base image:", available_bases).ask()
     if base_image == "Enter custom base image":
         # For custom input, we need to provide options since que.py only supports select
-        custom_images = ["ubuntu:20.04", "alpine:latest", "debian:bullseye", "Enter manually"]
+        custom_images = ["ubuntu:latest", "alpine:latest", "debian:bullseye", "Enter manually"]
         base_image = Question("Select base image:", custom_images).ask()
         if base_image == "Enter manually":
             # Since we can't do free text input with current que.py, we'll use a common default
-            base_image = "ubuntu:20.04"
-            arrow_message(f"Using default: {base_image}")
+            image_user_entered = input("Enter custom base image: ").strip()
+            arrow_message(f"Using default: {image_user_entered}")
 
     # Ask for working directory
     workdir = Question("Working directory inside container:", ["/app", "/usr/src/app", "/workspace", "Custom"]).ask()

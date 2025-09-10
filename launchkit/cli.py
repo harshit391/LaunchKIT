@@ -1,18 +1,33 @@
 from launchkit.modules.project_management import handle_existing_project, setup_new_project
 from launchkit.modules.server_management import cleanup_processes
+from launchkit.nlp.main import nlp_main
 from launchkit.utils.display_utils import progress_message, rich_message, status_message
+from launchkit.utils.que import Question
 from launchkit.utils.user_utils import handle_user_data
 
 def main():
     try:
         progress_message("Launching LaunchKIT... 🚀")
-        data, folder = handle_user_data()
 
-        # Check if project is already configured
-        if data.get("setup_complete", False):
-            handle_existing_project(data, folder)
+        print("\n\n")
+        msg = "Welcome to LaunchKIT!"
+        width = len(msg) + 6
+        print("\n╔" + "═" * width + "╗")
+        print("║" + msg.center(width) + "║")
+        print("╚" + "═" * width + "╝\n")
+
+        user_choice = Question("How do you want to Proceed?", ["Command Line", "Options"]).ask()
+
+        if user_choice == "Command Line":
+            nlp_main()
         else:
-            setup_new_project(data, folder)
+            data, folder = handle_user_data()
+
+            # Check if project is already configured
+            if data.get("setup_complete", False):
+                handle_existing_project(data, folder)
+            else:
+                setup_new_project(data, folder)
     except KeyboardInterrupt:
         cleanup_processes()
         rich_message("\nGoodbye! 👋")

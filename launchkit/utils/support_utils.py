@@ -46,7 +46,7 @@ FLASK_ENV=development
 
 def deploy_with_docker(folder):
     """Deploy using Docker."""
-    progress_message("Deploying with Docker...")
+    progress_message("Deploying with Docker...\n")
     os.system(f"cd {folder} && docker-compose up -d --build")
     status_message("Application deployed with Docker!")
 

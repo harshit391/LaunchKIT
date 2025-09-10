@@ -30,7 +30,7 @@ class ResourceType(Enum):
 
 @dataclass
 class ParsedCommand:
-    command_type: CommandType
+    command_type: Optional[CommandType] = None
     resource_type: Optional[ResourceType] = None
     target_project: Optional[str] = None
     additional_params: Dict[str, str] = None
@@ -212,7 +212,7 @@ class LaunchKitParser:
         for pattern, config in self.command_patterns.items():
             match = re.search(pattern, user_input, re.IGNORECASE)
             if match:
-                return self._build_command_from_match(match, config, user_input)
+                return self._build_command_from_match(match, config)
 
         # If no pattern matches, return unknown command
         return ParsedCommand(
@@ -220,7 +220,7 @@ class LaunchKitParser:
             confidence=0.0
         )
 
-    def _build_command_from_match(self, match, config, original_input) -> ParsedCommand:
+    def _build_command_from_match(self, match, config) -> ParsedCommand:
         """Build ParsedCommand object from regex match and config"""
         command = ParsedCommand(
             command_type=config['command'],
@@ -251,10 +251,11 @@ class LaunchKitParser:
 class LaunchKitActions:
     """Contains all the action functions that will be called after command parsing"""
 
-    def __init__(self, parser: LaunchKitParser):
-        self.parser = parser
+    def __init__(self, _parser: LaunchKitParser):
+        self.parser = _parser
 
-    def create_docker_container(self, project_name: str):
+    @staticmethod
+    def create_docker_container(project_name: str):
         """Create Docker container for specified project"""
         boxed_message(f"Creating Docker container for project '{project_name}'")
         progress_message("Generating Dockerfile")
@@ -262,7 +263,8 @@ class LaunchKitActions:
         progress_message("Tagging image")
         status_message("Container created successfully!", True)
 
-    def create_kubernetes_cluster(self, project_name: str):
+    @staticmethod
+    def create_kubernetes_cluster(project_name: str):
         """Create Kubernetes cluster for specified project"""
         boxed_message(f"Creating Kubernetes cluster for project '{project_name}'")
         progress_message("Generating K8s manifests")
@@ -270,14 +272,16 @@ class LaunchKitActions:
         progress_message("Configuring networking")
         status_message("Cluster created successfully!", True)
 
-    def create_project(self, project_name: str):
+    @staticmethod
+    def create_project(project_name: str):
         """Create new project"""
         boxed_message(f"Creating new project '{project_name}'")
         progress_message("Setting up project structure")
         progress_message("Initializing configuration")
         status_message("Project created successfully!", True)
 
-    def deploy_project(self, project_name: str):
+    @staticmethod
+    def deploy_project(project_name: str):
         """Deploy specified project"""
         boxed_message(f"Deploying project '{project_name}'")
         progress_message("Building application")
@@ -285,7 +289,8 @@ class LaunchKitActions:
         progress_message("Updating deployment")
         status_message("Deployment completed successfully!", True)
 
-    def delete_project(self, project_name: str):
+    @staticmethod
+    def delete_project(project_name: str):
         """Delete specified project"""
         boxed_message(f"Deleting project '{project_name}'")
         progress_message("Removing resources")
@@ -341,7 +346,7 @@ class LaunchKitActions:
 
     def show_project_actions_menu(self, project_name: str):
         """Show actions menu for a selected project"""
-        actions = [
+        _actions = [
             "View Details",
             "Deploy",
             "Delete",
@@ -352,7 +357,7 @@ class LaunchKitActions:
 
         action = questionary.select(
             f"What would you like to do with project '{project_name}'?",
-            choices=actions,
+            choices=_actions,
             style=self.parser.custom_style
         ).ask()
 
@@ -404,7 +409,7 @@ class LaunchKitActions:
         if not container:
             return
 
-        actions = [
+        _actions = [
             "View Details",
             "Start Container",
             "Stop Container",
@@ -417,7 +422,7 @@ class LaunchKitActions:
 
         action = questionary.select(
             f"What would you like to do with container '{container_name}'?",
-            choices=actions,
+            choices=_actions,
             style=self.parser.custom_style
         ).ask()
 
@@ -436,7 +441,8 @@ class LaunchKitActions:
         elif action == "Delete Container":
             self.delete_docker_container(container_name)
 
-    def show_docker_container_details(self, container: dict):
+    @staticmethod
+    def show_docker_container_details(container: dict):
         """Show detailed information about a Docker container"""
         print("\n" + "=" * 50)
         print(f"DOCKER CONTAINER: {container['name'].upper()}")
@@ -448,13 +454,15 @@ class LaunchKitActions:
         print(f"Ports:      {', '.join(container['ports']) if container['ports'] else 'None'}")
         print("=" * 50)
 
-    def docker_container_action(self, container_name: str, action: str):
+    @staticmethod
+    def docker_container_action(container_name: str, action: str):
         """Perform Docker container actions"""
         arrow_message(f"Performing '{action}' on container '{container_name}'")
         progress_message(f"Executing docker {action}")
         status_message(f"Container {action} completed successfully!", True)
 
-    def view_docker_logs(self, container_name: str):
+    @staticmethod
+    def view_docker_logs(container_name: str):
         """View Docker container logs"""
         boxed_message(f"Viewing logs for container '{container_name}'")
         print("Latest container logs:")
@@ -465,7 +473,8 @@ class LaunchKitActions:
         print("2024-09-10 10:36:45 [WARN] High memory usage detected")
         print("-" * 40)
 
-    def update_docker_image(self, container_name: str):
+    @staticmethod
+    def update_docker_image(container_name: str):
         """Update Docker container image"""
         boxed_message(f"Updating image for container '{container_name}'")
         progress_message("Pulling latest image")
@@ -523,7 +532,7 @@ class LaunchKitActions:
         if not cluster:
             return
 
-        actions = [
+        _actions = [
             "View Details",
             "View Pods",
             "View Services",
@@ -538,7 +547,7 @@ class LaunchKitActions:
 
         action = questionary.select(
             f"What would you like to do with cluster '{cluster_name}'?",
-            choices=actions,
+            choices=_actions,
             style=self.parser.custom_style
         ).ask()
 
@@ -561,7 +570,8 @@ class LaunchKitActions:
         elif action == "Monitor Resources":
             self.monitor_kubernetes_resources(cluster_name)
 
-    def show_kubernetes_cluster_details(self, cluster: dict):
+    @staticmethod
+    def show_kubernetes_cluster_details(cluster: dict):
         """Show detailed information about a Kubernetes cluster"""
         print("\n" + "=" * 50)
         print(f"KUBERNETES CLUSTER: {cluster['name'].upper()}")
@@ -573,7 +583,8 @@ class LaunchKitActions:
         print(f"Version:    {cluster['version']}")
         print("=" * 50)
 
-    def view_kubernetes_pods(self, cluster_name: str):
+    @staticmethod
+    def view_kubernetes_pods(cluster_name: str):
         """View pods in Kubernetes cluster"""
         boxed_message(f"Pods in cluster '{cluster_name}'")
         print("NAME                    READY   STATUS    RESTARTS   AGE")
@@ -581,14 +592,16 @@ class LaunchKitActions:
         print("app-deployment-def456   1/1     Running   1          2d")
         print("worker-pod-789          1/1     Running   0          1d")
 
-    def view_kubernetes_services(self, cluster_name: str):
+    @staticmethod
+    def view_kubernetes_services(cluster_name: str):
         """View services in Kubernetes cluster"""
         boxed_message(f"Services in cluster '{cluster_name}'")
         print("NAME           TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)")
         print("app-service    ClusterIP   10.96.0.100    <none>        80/TCP")
         print("api-service    NodePort    10.96.0.101    <none>        8080:30080/TCP")
 
-    def view_kubernetes_deployments(self, cluster_name: str):
+    @staticmethod
+    def view_kubernetes_deployments(cluster_name: str):
         """View deployments in Kubernetes cluster"""
         boxed_message(f"Deployments in cluster '{cluster_name}'")
         print("NAME               READY   UP-TO-DATE   AVAILABLE   AGE")
@@ -609,7 +622,8 @@ class LaunchKitActions:
             progress_message("Provisioning new nodes")
             status_message(f"Cluster scaled to {new_nodes} nodes successfully!", True)
 
-    def update_kubernetes_cluster(self, cluster_name: str):
+    @staticmethod
+    def update_kubernetes_cluster(cluster_name: str):
         """Update Kubernetes cluster"""
         boxed_message(f"Updating cluster '{cluster_name}'")
         progress_message("Checking for updates")
@@ -632,7 +646,8 @@ class LaunchKitActions:
         else:
             status_message("Operation cancelled", False)
 
-    def view_kubernetes_logs(self, cluster_name: str):
+    @staticmethod
+    def view_kubernetes_logs(cluster_name: str):
         """View Kubernetes cluster logs"""
         boxed_message(f"Viewing logs for cluster '{cluster_name}'")
         print("Recent cluster events:")
@@ -643,7 +658,8 @@ class LaunchKitActions:
         print("2024-09-10 10:28:45  Deployment app-deployment scaled")
         print("-" * 50)
 
-    def monitor_kubernetes_resources(self, cluster_name: str):
+    @staticmethod
+    def monitor_kubernetes_resources(cluster_name: str):
         """Monitor Kubernetes cluster resources"""
         boxed_message(f"Resource monitoring for cluster '{cluster_name}'")
         print("CPU Usage:    65%")
@@ -698,15 +714,15 @@ class LaunchKitCLI:
 
                 # Parse the command
                 parsed_command = self.parser.parse_command(user_input)
-                self.handle_parsed_command(parsed_command, user_input)
+                self.handle_parsed_command(parsed_command)
 
             except KeyboardInterrupt:
                 exiting_program()
                 break
-            except Exception as e:
-                status_message(f"Error: {e}", False)
+            except Exception as ex:
+                status_message(f"Error: {ex}", False)
 
-    def handle_parsed_command(self, command: ParsedCommand, original_input: str):
+    def handle_parsed_command(self, command: ParsedCommand):
         """Handle the parsed command and execute appropriate action"""
         if not command.command_type:
             status_message("I didn't understand that command. Type 'help' for available commands.", False)
@@ -897,7 +913,8 @@ class LaunchKitCLI:
             if command.resource_type == ResourceType.PROJECT:
                 self.actions.show_project_details(command.target_project)
 
-    def show_help(self):
+    @staticmethod
+    def show_help():
         """Show help information"""
         boxed_message("LaunchKit Commands")
 
@@ -933,14 +950,10 @@ class LaunchKitCLI:
         print("   > deploy myapp                     # Deploy specific project")
 
 
-if __name__ == "__main__":
-    print("Installing required dependencies...")
-    print("Make sure you have: pip install questionary rich")
-    print()
-
+def nlp_main():
     # Example usage without CLI
     parser = LaunchKitParser()
-    actions = LaunchKitActions(parser)
+    LaunchKitActions(parser)
 
     print("\n" + "=" * 50)
     print("Starting interactive CLI...")

@@ -1,4 +1,5 @@
 from typing import Callable, List, Dict
+
 from launchkit.modules.addon_management import enable_ci, enable_tests, enable_lint_format
 from launchkit.utils.interactive_docker_k8s import enable_docker, enable_k8s
 from launchkit.utils.scaffold_utils import *
@@ -90,7 +91,7 @@ ADDONS: List[str] = [
     "Add Unit Testing Skeleton",
 ]
 
-SCAFFOLDERS: Dict[str, Callable[[Path], None]] = {
+SCAFFOLDERS: Dict[str, Callable[...,bool]] = {
     "React (Vite)": scaffold_react_vite,
     "React (Next.js - Static UI)": scaffold_nextjs_static,
     "React (Next.js - SSR)": scaffold_nextjs_ssr,

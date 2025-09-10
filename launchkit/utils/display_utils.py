@@ -34,8 +34,8 @@ from rich.panel import Panel
 
 console = Console()
 
-def rich_message(msg: str, style="bold green"):
-    console.print(Panel("You chose: " + msg, style=style, expand=False))
+def rich_message(msg: str, style="bold green", show: bool = True):
+    console.print(Panel(f"{"You chose: " if show else ""}{msg}", style=style, expand=False))
 
 # Example
 def status_message(task: str, success=True):

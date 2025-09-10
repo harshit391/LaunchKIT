@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from launchkit.utils.display_utils import arrow_message, status_message, progress_message, exiting_program
+from launchkit.utils.scaffold_utils import cleanup_failed_scaffold
 
 
 def setup_git(folder: Path):
@@ -12,10 +13,12 @@ def setup_git(folder: Path):
     add_git_ignore_file(folder)
 
     if not initialize_git_repo(folder):
+        cleanup_failed_scaffold(folder)
         exiting_program()
         sys.exit(1)
 
     if not create_initial_commit(folder):
+        cleanup_failed_scaffold(folder)
         exiting_program()
         sys.exit(1)
 
