@@ -41,10 +41,14 @@ def run_scaffolding(stack: str, folder: Path):
     scaffold = SCAFFOLDERS.get(stack)
     if not scaffold:
         status_message(f"No scaffolder registered for '{stack}'.", False)
+        scaffold_project_with_cleanup(scaffold, folder)
         exiting_program()
         sys.exit(1)
 
-    scaffold_project_with_cleanup(scaffold, folder)
+    if not scaffold(folder):
+        scaffold_project_with_cleanup(scaffold, folder)
+        exiting_program()
+        sys.exit(1)
 
 
 def create_project_summary(data: dict, folder: Path):
@@ -216,6 +220,8 @@ def setup_new_project(data, folder):
     except Exception as e:
         print(f"ERROR: {e}")
         cleanup_failed_scaffold(folder)
+        exiting_program()
+        sys.exit(1)
 
 
 def handle_existing_project(data, folder):
@@ -266,7 +272,8 @@ def handle_existing_project(data, folder):
             scaffold_project_complete_delete(folder)
             cleanup_processes()
             status_message("Project deletion complete!")
-            break
+            exiting_program()
+            sys.exit(1)
         elif "Exit" in action:
             cleanup_processes()
             rich_message("Happy coding! 🚀", False)

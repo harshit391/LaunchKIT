@@ -37,8 +37,7 @@ def cleanup_failed_scaffold(folder: Path) -> None:
 def _run_command(command: str, cwd: Path, shell: bool = True, check: bool = True) -> bool:
     """Run a command and return success status."""
     try:
-        subprocess.run(command, cwd=cwd, shell=shell, check=check,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        subprocess.run(command, cwd=cwd, shell=shell, check=check)
         return True
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr.decode() if e.stderr else str(e)
@@ -87,12 +86,9 @@ def scaffold_nextjs_static(folder: Path) -> bool:
     arrow_message("Scaffolding Next.js (Static UI)...")
 
     try:
-        project_name = folder.name
-        parent_dir = folder.parent
-
         if not _run_command(
-                f"npx create-next-app@latest {project_name} --typescript --tailwind --eslint --app --src-dir --import-alias '@/*'",
-                parent_dir):
+                f"npx create-next-app@latest",
+                folder):
             return False
 
         status_message("Next.js static project scaffolded successfully.")
@@ -557,7 +553,7 @@ def scaffold_project_with_cleanup(scaffold_function, folder: Path, *args, **kwar
         return False
 
 
-def scaffold_project_complete_delete(folder: Path, *args, **kwargs) -> bool:
+def scaffold_project_complete_delete(folder: Path) -> bool:
     """
     Completely delete a project folder after user confirmation.
 

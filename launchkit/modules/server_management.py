@@ -1,25 +1,17 @@
 # Add these imports to your cli.py file
 import atexit
-import json
-import os
-import platform
 import signal
-import subprocess
-import sys
-import threading
-import time
-import webbrowser
+from typing import Any
+
 from pathlib import Path
 
-from launchkit.utils.display_utils import *
-from launchkit.utils.que import Question
 
 running_processes = {}
 
 
 def detect_server_config(folder: Path, stack: str) -> dict:
     """Detect server configuration based on project structure and stack."""
-    config = {
+    config: Any = {
         'command': None,
         'url': 'http://localhost:3000',
         'working_dir': folder,
@@ -256,8 +248,8 @@ def run_server_background(server_config, data):
                     # Process failed to start
                     try:
                         error_output = process.stdout.read() if process.stdout else "Unknown error"
-                    except Exception:
-                        error_output = "Failed to read error output"
+                    except Exception as ex:
+                        error_output = f"Failed to read error output: {ex}"
                     status_message(f"Failed to start development server: {error_output}", False)
                     # Clean up failed process
                     if 'dev_server' in running_processes:
@@ -437,7 +429,8 @@ def check_server_status():
                 arrow_message(f"Uptime: {format_duration(uptime)}")
             except ImportError:
                 pass  # psutil not available
-            except Exception:
+            except Exception as ex:
+                print(f"Failed to check server status: {ex}", file=sys.stderr)
                 pass  # Process might not exist anymore
 
         else:
@@ -479,7 +472,7 @@ def show_server_logs():
 
 
 def format_duration(seconds):
-    """Format duration in seconds to human readable format."""
+    """Format duration in seconds to human-readable format."""
     if seconds < 60:
         return f"{int(seconds)}s"
     elif seconds < 3600:
@@ -634,9 +627,7 @@ import os
 import platform
 import signal
 import subprocess
-import sys
 import threading
-import time
 import webbrowser
 from pathlib import Path
 
@@ -648,7 +639,7 @@ running_processes = {}
 
 def detect_server_config(folder: Path, stack: str) -> dict:
     """Detect server configuration based on project structure and stack."""
-    config = {
+    config: Any = {
         'command': None,
         'url': 'http://localhost:3000',
         'working_dir': folder,
@@ -885,8 +876,8 @@ def run_server_background(server_config, data):
                     # Process failed to start
                     try:
                         error_output = process.stdout.read() if process.stdout else "Unknown error"
-                    except Exception:
-                        error_output = "Failed to read error output"
+                    except Exception as ex:
+                        error_output = f"Failed to read error output: {ex}"
                     status_message(f"Failed to start development server: {error_output}", False)
                     # Clean up failed process
                     if 'dev_server' in running_processes:
@@ -1066,7 +1057,8 @@ def check_server_status():
                 arrow_message(f"Uptime: {format_duration(uptime)}")
             except ImportError:
                 pass  # psutil not available
-            except Exception:
+            except Exception as ex:
+                print(f"Failed to check server status: {ex}")
                 pass  # Process might not exist anymore
 
         else:
@@ -1108,7 +1100,7 @@ def show_server_logs():
 
 
 def format_duration(seconds):
-    """Format duration in seconds to human readable format."""
+    """Format duration in seconds to human-readable format."""
     if seconds < 60:
         return f"{int(seconds)}s"
     elif seconds < 3600:
@@ -1248,7 +1240,7 @@ atexit.register(cleanup_processes)
 
 # Handle Ctrl+C gracefully
 def signal_handler(_sig, _frame):
-    rich_message("\nReceived interrupt signal. Cleaning up...", False)
+    rich_message("Received interrupt signal. Cleaning up...", False)
     cleanup_processes()
     rich_message("Goodbye! 👋", False)
     sys.exit(0)
