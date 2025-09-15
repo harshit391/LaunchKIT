@@ -1,7 +1,6 @@
-from typing import Callable, List, Dict
+from typing import Callable
 
-from launchkit.modules.addon_management import enable_ci, enable_tests, enable_lint_format
-from launchkit.utils.interactive_docker_k8s import enable_docker, enable_k8s
+from launchkit.modules.addon_management import *
 from launchkit.utils.scaffold_utils import *
 
 PROJECT_TYPES: List[str] = [
@@ -93,8 +92,7 @@ ADDONS: List[str] = [
 
 SCAFFOLDERS: Dict[str, Callable[...,bool]] = {
     "React (Vite)": scaffold_react_vite,
-    "React (Next.js - Static UI)": scaffold_nextjs_static,
-    "React (Next.js - SSR)": scaffold_nextjs_ssr,
+    "React (Next.js)": scaffold_nextjs_static,
     "Node.js (Express)": scaffold_node_express,
     "Flask (Python)": scaffold_flask_backend,
     "MERN (Mongo + Express + React + Node)": scaffold_mern,
@@ -108,7 +106,7 @@ SCAFFOLDERS: Dict[str, Callable[...,bool]] = {
 # Updated ADDON_DISPATCH with new functions
 ADDON_DISPATCH: Dict[str, Callable[[Path, str], None]] = {
     "Add Docker Support": enable_docker,
-    "Add Kubernetes Support": enable_k8s,
+    "Add Kubernetes Support": enable_kubernetes,
     "Add CI (GitHub Actions)": enable_ci,
     "Add Linting & Formatter": enable_lint_format,
     "Add Unit Testing Skeleton": enable_tests,
