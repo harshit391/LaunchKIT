@@ -14,8 +14,7 @@ PROJECT_TYPES: List[str] = [
 STACK_CATALOG: Dict[str, List[str]] = {
     "Frontend only": [
         "React (Vite)",
-        "React (Next.js - Static UI)",
-        "React (Next.js - SSR)",
+        "React (Next.js)",
     ],
     "Backend only": [
         "Node.js (Express)",

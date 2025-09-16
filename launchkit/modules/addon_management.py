@@ -499,7 +499,7 @@ def enable_tests(folder: Path, stack: str):
 
     if _is_node_based_stack(stack):
         # Ask for testing framework
-        test_frameworks = ["Jest", "Vitest"]
+        test_frameworks = ["Jest (Don't use it for React Vite)", "Vitest"]
         if _is_next_js_stack(stack):
             test_frameworks = ["Jest", "Vitest", "Jest + React Testing Library"]
 

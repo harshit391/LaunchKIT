@@ -195,7 +195,7 @@ def scaffold_react_vite(folder: Path) -> bool:
 
     try:
         # Create Vite React project
-        if not _run_command("npm create vite@latest . -- --template react", folder):
+        if not _run_command("npm create vite@latest .", folder):
             return False
 
         status_message("React Vite project initialized successfully.")
@@ -232,7 +232,8 @@ export default defineConfig({
         (tests_dir / "setup.js").write_text(setup_content)
 
         # Create sample test
-        sample_test = """import { render, screen } from '@testing-library/react'
+        sample_test = """import React from 'react'
+import { render, screen } from '@testing-library/react'
 import { expect, test } from 'vitest'
 import App from '../src/App'
 

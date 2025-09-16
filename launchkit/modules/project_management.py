@@ -644,7 +644,7 @@ def run_tests(data, folder):
                                             cwd=folder, capture_output=True, text=True, shell=True)
                 elif (folder / "vitest.config.js").exists():
                     print("4\n")
-                    result = subprocess.run(["npm", "run", "test"], cwd=folder, capture_output=True, text=True)
+                    subprocess.run(["npm", "run", "test"], cwd=folder, shell=True)
                 elif (folder / "package.json").exists():
                     print("5\n")
                     result = subprocess.run(["npm", "test", "--", "--watchAll=false"],
@@ -655,16 +655,16 @@ def run_tests(data, folder):
                     status_message("No test configuration found", False)
                     return
 
-                if result.returncode == 0:
-                    status_message("All tests passed!", True)
-                    if result.stdout:
-                        display_test_output(result.stdout)
-                else:
-                    status_message("Some tests failed!", False)
-                    print(result.stdout)
-                    if result.stderr:
-                        status_message("Error output:", False)
-                        arrow_message(result.stderr.strip())
+                # if result.returncode == 0:
+                #     status_message("All tests passed!", True)
+                #     if result.stdout:
+                #         display_test_output(result.stdout)
+                # else:
+                #     status_message("Some tests failed!", False)
+                #     print(result.stdout)
+                #     if result.stderr:
+                #         status_message("Error output:", False)
+                #         arrow_message(result.stderr.strip())
 
         elif _is_python_based_stack(stack):
             print("7\n")
