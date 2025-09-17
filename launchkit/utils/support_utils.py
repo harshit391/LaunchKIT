@@ -45,10 +45,259 @@ FLASK_ENV=development
 
 
 def deploy_with_docker(folder):
-    """Deploy using Docker."""
+    """Deploy using Docker with comprehensive setup created by addon_management."""
     progress_message("Deploying with Docker...\n")
-    os.system(f"cd {folder} && docker-compose up -d --build")
-    status_message("Application deployed with Docker!")
+
+    # Check if Docker configuration exists
+    dockerfile_path = folder / "Dockerfile"
+    compose_path = folder / "docker-compose.yml"
+
+    if not dockerfile_path.exists():
+        status_message("Dockerfile not found. Please add Docker support first using add-ons.", False)
+        return
+
+    if not compose_path.exists():
+        status_message("docker-compose.yml not found. Please add Docker support first using add-ons.", False)
+        return
+
+    try:
+        # Check if Docker is running
+        result = os.system("docker --version > /dev/null 2>&1")
+        if result != 0:
+            status_message("Docker is not installed or not running.", False)
+            return
+
+        # Check if docker-compose is available
+        result = os.system("docker-compose --version > /dev/null 2>&1")
+        if result != 0:
+            status_message("docker-compose is not installed.", False)
+            return
+
+        rich_message("Building and starting Docker containers...")
+
+        # Build and start services using docker-compose
+        result = os.system(f"cd {folder} && docker-compose up -d --build")
+
+        if result == 0:
+            status_message("Docker containers started successfully!")
+
+            # Show running containers
+            rich_message("\nRunning containers:")
+            os.system(f"cd {folder} && docker-compose ps")
+
+            # Show useful information
+            boxed_message("Docker Deployment Information")
+            print("Application URLs:")
+            print("- Main application: http://localhost:3000 or http://localhost:5000")
+            print("- Redis: localhost:6379")
+
+            # Check for database services and show their URLs
+            compose_content = (folder / "docker-compose.yml").read_text()
+            if "postgres" in compose_content:
+                print("- PostgreSQL: localhost:5432")
+                if "pgadmin" in compose_content:
+                    print("- pgAdmin: http://localhost:8080")
+
+            if "mongo" in compose_content:
+                print("- MongoDB: localhost:27017")
+                if "mongo-express" in compose_content:
+                    print("- Mongo Express: http://localhost:8081")
+
+            if "nginx" in compose_content:
+                print("- Nginx proxy: http://localhost:80")
+
+            print("\nUseful commands:")
+            print(f"- View logs: docker-compose -f {folder}/docker-compose.yml logs -f")
+            print(f"- Stop services: docker-compose -f {folder}/docker-compose.yml down")
+            print(f"- Restart services: docker-compose -f {folder}/docker-compose.yml restart")
+
+            # Check if helper scripts exist
+            scripts_dir = folder / "scripts"
+            if scripts_dir.exists():
+                print("\nHelper scripts available:")
+                for script in ["dev.sh", "prod.sh", "stop.sh", "clean.sh"]:
+                    if (scripts_dir / script).exists():
+                        print(f"- ./scripts/{script}")
+        else:
+            status_message("Docker deployment failed. Check the logs above for details.", False)
+
+    except Exception as e:
+        status_message(f"Docker deployment failed: {e}", False)
+
+
+def deploy_to_kubernetes(folder):
+    """Deploy application to Kubernetes using configurations from addon_management."""
+    progress_message("Deploying to Kubernetes...")
+
+    namespace = os.environ.get("KUBE_NAMESPACE")
+
+    print("Deploy 1")
+
+    # Check if k8s manifests exist
+    k8s_dir = folder / "k8s"
+    if not k8s_dir.exists():
+        status_message("Kubernetes manifests not found. Please add Kubernetes support first using add-ons.", False)
+        return
+
+    print("Deploy 2")
+
+    # Check for kubectl
+    result = os.system("kubectl version --client > /dev/null 2>&1")
+    if result != 0:
+        status_message("kubectl is not installed or not configured.", False)
+        return
+
+    print("Deploy 3")
+
+    # Check for kustomize
+    result = os.system("kustomize version > /dev/null 2>&1")
+    if result != 0:
+        status_message("kustomize is not installed. Please install kustomize first.", False)
+        return
+
+    print("Deploy 4")
+
+    try:
+        # Determine deployment environment
+        environments = []
+        overlays_dir = k8s_dir / "overlays"
+        if overlays_dir.exists():
+            for env_dir in overlays_dir.iterdir():
+                if env_dir.is_dir() and (env_dir / "kustomization.yaml").exists():
+                    environments.append(env_dir.name)
+
+        print("Deploy 5")
+
+        if not environments:
+            environments = ["base"]
+
+        print("Deploy 6")
+
+        # Ask user for environment if multiple options exist
+        if len(environments) > 1:
+            environment = Question(f"Select deployment environment:", environments + ["Cancel"]).ask()
+            if environment == "Cancel":
+                return
+        else:
+            environment = environments[0]
+
+        print("Deploy 7")
+
+        app_name = folder.name.lower().replace(" ", "-").replace("_", "-")
+        namespace = app_name
+
+        print("Deploy 8")
+
+        rich_message(f"Deploying to {environment} environment...")
+
+        # Create namespace
+        os.system(f"kubectl create namespace {namespace} --dry-run=client -o yaml | kubectl apply -f -")
+
+        print("Deploy 9")
+
+        # Apply configurations based on environment
+        if environment == "base":
+            deploy_path = k8s_dir / "base"
+            result = os.system(f"kubectl apply -f {deploy_path}/ -n {namespace}")
+        else:
+            deploy_path = k8s_dir / "overlays" / environment
+            result = os.system(f"cd {deploy_path} && kustomize build . | kubectl apply -f -")
+
+        print("Deploy 10")
+
+        if result != 0:
+            status_message("Failed to apply Kubernetes manifests.", False)
+            return
+
+        print("Deploy 11")
+
+        status_message("Kubernetes manifests applied successfully!")
+
+        # Wait for deployment to be ready
+        rich_message("Waiting for deployment to be ready...")
+        deployment_name = f"{app_name}-deployment"
+
+        result = os.system(f"kubectl rollout status deployment/{deployment_name} -n {namespace} --timeout=300s")
+
+        print("Deploy 12")
+
+        if result == 0:
+            status_message("Deployment completed successfully!")
+
+            # Show deployment status
+            boxed_message("Kubernetes Deployment Status")
+
+            print("Pods:")
+            os.system(f"kubectl get pods -n {namespace} -l app={app_name}")
+
+            print("Deploy 13")
+
+            print("\nServices:")
+            os.system(f"kubectl get svc -n {namespace}")
+
+            print("Deploy 14")
+
+            # Check for ingress
+            ingress_result = os.system(f"kubectl get ingress -n {namespace} > /dev/null 2>&1")
+            if ingress_result == 0:
+                print("\nIngress:")
+                os.system(f"kubectl get ingress -n {namespace}")
+
+            print("Deploy 15")
+
+            # Check for HPA
+            hpa_result = os.system(f"kubectl get hpa -n {namespace} > /dev/null 2>&1")
+            if hpa_result == 0:
+                print("\nHorizontal Pod Autoscaler:")
+                os.system(f"kubectl get hpa -n {namespace}")
+
+            print("Deploy 16")
+
+            # Check for PVCs
+            pvc_result = os.system(f"kubectl get pvc -n {namespace} > /dev/null 2>&1")
+            if pvc_result == 0:
+                print("\nPersistent Volume Claims:")
+                os.system(f"kubectl get pvc -n {namespace}")
+
+            print("Deploy 17")
+
+            print(f"\nUseful commands:")
+            print(f"- View logs: kubectl logs -f -l app={app_name} -n {namespace}")
+            print(f"- Get pod status: kubectl get pods -n {namespace}")
+            print(f"- Describe deployment: kubectl describe deployment {deployment_name} -n {namespace}")
+            print(f"- Port forward: kubectl port-forward svc/{app_name}-service 8080:80 -n {namespace}")
+
+
+            # Check if helper scripts exist
+            scripts_dir = folder / "scripts"
+            if scripts_dir.exists():
+                print("\nHelper scripts available:")
+                for script in ["k8s-status.sh", "k8s-logs.sh", "k8s-scale.sh"]:
+                    if (scripts_dir / script).exists():
+                        print(f"- ./scripts/{script}")
+
+            print("Deploy 18")
+
+            # Check for Helm chart
+            helm_dir = folder / "helm"
+            if helm_dir.exists():
+                print(f"\nHelm chart available at: ./helm/{app_name}/")
+                print(f"- Install: helm install {app_name} ./helm/{app_name}/ -n {namespace}")
+                print(f"- Upgrade: helm upgrade {app_name} ./helm/{app_name}/ -n {namespace}")
+
+            print("Deploy 19")
+        else:
+            status_message("Deployment rollout failed or timed out.", False)
+            print(f"\nTo check the status manually:")
+            print(f"kubectl get pods -n {namespace}")
+            print(f"kubectl describe deployment {deployment_name} -n {namespace}")
+
+    except Exception as e:
+        status_message(f"Kubernetes deployment failed: {e}", False)
+        print(f"\nFor troubleshooting:")
+        print(f"- Check cluster connection: kubectl cluster-info")
+        print(f"- Check node status: kubectl get nodes")
+        print(f"- Check events: kubectl get events -n {namespace} --sort-by='.lastTimestamp'")
 
 
 def view_project_summary(folder):
@@ -61,30 +310,6 @@ def view_project_summary(folder):
         print(content)
     else:
         status_message("Project summary not found", False)
-
-
-def deploy_to_kubernetes(folder):
-    """Deploy application to Kubernetes."""
-    progress_message("Deploying to Kubernetes...")
-
-    # Check if k8s manifests exist
-    k8s_dir = folder / "k8s"
-    if not k8s_dir.exists():
-        status_message("Kubernetes manifests not found. Please add Kubernetes support first.", False)
-        return
-
-    try:
-        # Apply Kubernetes manifests
-        os.system(f"kubectl apply -f {k8s_dir}/")
-        status_message("Application deployed to Kubernetes!")
-
-        # Show deployment status
-        rich_message("Checking deployment status...")
-        os.system("kubectl get pods")
-        os.system("kubectl get services")
-
-    except Exception as e:
-        status_message(f"Kubernetes deployment failed: {e}", False)
 
 
 def setup_automated_deployment(folder):
@@ -249,7 +474,6 @@ def reset_project_config(data, folder):
     rich_message("Run LaunchKIT again to reconfigure your project.", False)
 
 
-# Helper functions for automated deployment
 def add_staging_deployment(folder):
     """Add staging deployment to CI workflow."""
     ci_file = folder / ".github" / "workflows" / "ci.yml"

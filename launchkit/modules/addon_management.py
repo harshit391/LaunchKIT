@@ -1687,6 +1687,8 @@ def enable_kubernetes(folder: Path, stack: str):
     enable_logging = Question("Enable centralized logging (ELK/Loki)?", ["Yes", "No"]).ask()
     enable_autoscaling = Question("Enable Horizontal Pod Autoscaling?", ["Yes", "No"]).ask()
 
+
+
     # Create Namespace
     namespace_yaml = f"""apiVersion: v1
 kind: Namespace
@@ -1697,6 +1699,8 @@ metadata:
     environment: production
 """
     (k8s_dir / "base" / "namespace.yaml").write_text(namespace_yaml)
+
+    print("Problem 1")
 
     # Create ConfigMap for application configuration
     configmap_yaml = f"""apiVersion: v1
@@ -1729,6 +1733,8 @@ data:
 
     (k8s_dir / "base" / "configmap.yaml").write_text(configmap_yaml)
 
+    print("Problem 2")
+
     # Create Secret for sensitive data
     secret_yaml = f"""apiVersion: v1
 kind: Secret
@@ -1743,6 +1749,8 @@ stringData:
   API_KEY: "your-api-key-here"  # Add your API keys
 """
     (k8s_dir / "base" / "secret.yaml").write_text(secret_yaml)
+
+    print("Problem 3")
 
     # Enhanced Deployment with production-ready features
     deployment_yaml = f"""apiVersion: apps/v1
@@ -1865,6 +1873,8 @@ spec:
 """
     (k8s_dir / "base" / "deployment.yaml").write_text(deployment_yaml)
 
+    print("Problem 4")
+
     # Enhanced Service with multiple port support
     service_yaml = f"""apiVersion: v1
 kind: Service
@@ -1891,6 +1901,8 @@ spec:
   type: ClusterIP
 """
     (k8s_dir / "base" / "service.yaml").write_text(service_yaml)
+
+    print("Problem 5")
 
     # Service Account with proper RBAC
     service_account_yaml = f"""apiVersion: v1
@@ -1931,6 +1943,8 @@ roleRef:
 """
     (k8s_dir / "base" / "serviceaccount.yaml").write_text(service_account_yaml)
 
+    print("Problem 6")
+
     # Create Ingress if requested
     if enable_ingress == "Yes":
         ingress_yaml = f"""apiVersion: networking.k8s.io/v1
@@ -1966,6 +1980,8 @@ spec:
               number: 80
 """
         (k8s_dir / "base" / "ingress.yaml").write_text(ingress_yaml)
+
+        print("Problem 7")
 
     # Create HPA if requested
     if enable_autoscaling == "Yes":
@@ -2014,6 +2030,8 @@ spec:
 """
         (k8s_dir / "base" / "hpa.yaml").write_text(hpa_yaml)
 
+        print("Problem 8")
+
     # Create PodDisruptionBudget for high availability
     pdb_yaml = f"""apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -2027,6 +2045,8 @@ spec:
       app: {app_name}
 """
     (k8s_dir / "base" / "poddisruptionbudget.yaml").write_text(pdb_yaml)
+
+    print("Problem 9")
 
     # Create NetworkPolicy for security
     network_policy_yaml = f"""apiVersion: networking.k8s.io/v1
@@ -2079,25 +2099,39 @@ spec:
 """
     (k8s_dir / "base" / "networkpolicy.yaml").write_text(network_policy_yaml)
 
+    print("Problem 10")
+
     # Add database resources based on stack
     create_database_resources(k8s_dir, stack, app_name)
+
+    print("Problem 11")
 
     # Create monitoring resources if requested
     if enable_monitoring == "Yes":
         create_monitoring_resources(k8s_dir, app_name, app_port)
 
+    print("Problem 12")
+
     # Create logging resources if requested
     if enable_logging == "Yes":
         create_logging_resources(k8s_dir, app_name)
 
+    print("Problem 13")
+
     # Create Kustomization files for different environments
     create_kustomization_files(k8s_dir, app_name, cluster_type)
+
+    print("Problem 14")
 
     # Create deployment scripts and helpers
     create_k8s_scripts(folder, app_name)
 
+    print("Problem 15")
+
     # Create Helm chart (optional but recommended)
     create_helm_chart(folder, stack, app_name, app_port)
+
+    print("Problem 16")
 
     status_message("Kubernetes configuration added with production-ready features!")
 
@@ -3223,10 +3257,13 @@ echo "✅ Backup completed: $BACKUP_DIR"
 
     for script_name, script_content in scripts.items():
         script_path = scripts_dir / script_name
-        script_path.write_text(script_content)
+        print("14.1")
+        script_path.write_text(script_content, "utf-8")
+        print("14.2")
         # Make scripts executable
         import os
         os.chmod(script_path, 0o755)
+        print("14.3")
 
 
 def create_helm_chart(folder: Path, stack: str, app_name: str, app_port: str):
@@ -3249,6 +3286,8 @@ maintainers:
     email: devops@company.com
 """
     (helm_dir / "Chart.yaml").write_text(chart_yaml)
+
+    print("15.1")
 
     # values.yaml
     values_yaml = f"""# Default values for {app_name}
@@ -3359,6 +3398,8 @@ secrets:
 
     (helm_dir / "values.yaml").write_text(values_yaml)
 
+    print("15.2")
+
     # Create templates directory
     templates_dir = helm_dir / "templates"
     templates_dir.mkdir(exist_ok=True)
@@ -3441,6 +3482,8 @@ spec:
 """
     (templates_dir / "deployment.yaml").write_text(deployment_template)
 
+    print("15.3")
+
     # Helper template
     helpers_template = f"""{{{{/*
 Expand the name of the chart.
@@ -3505,6 +3548,8 @@ Create the name of the service account to use
 """
     (templates_dir / "_helpers.tpl").write_text(helpers_template)
 
+    print("15.4")
+
     # Create additional Helm templates (service, ingress, etc.)
     # Service template
     service_template = f"""apiVersion: v1
@@ -3524,6 +3569,8 @@ spec:
     {{{{- include "{app_name}.selectorLabels" . | nindent 4 }}}}
 """
     (templates_dir / "service.yaml").write_text(service_template)
+
+    print("15.5")
 
     # Create Makefile for easy Helm management
     makefile_content = f"""# Helm management for {app_name}
@@ -3562,6 +3609,8 @@ deps:
 	helm dependency update ./helm/$(CHART_NAME)
 """
     (folder / "Makefile").write_text(makefile_content)
+
+    print("15.6")
 
     # Create README for Kubernetes deployment
     readme_content = f"""# {app_name} Kubernetes Deployment
@@ -3689,7 +3738,9 @@ If monitoring is enabled, you can access:
 ./scripts/k8s-backup.sh
 ```
 """
-    (folder / "k8s" / "README.md").write_text(readme_content)
+    (folder / "k8s" / "README.md").write_text(readme_content, "utf-8")
+
+    print("15.7")
 
 
 def apply_addons(addons: List[str], folder: Path, stack: str):
