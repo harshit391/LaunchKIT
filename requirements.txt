@@ -5,3 +5,4 @@ docker
 tk
 jinja2
 pytest
+pyyaml

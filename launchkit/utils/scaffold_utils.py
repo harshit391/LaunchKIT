@@ -271,7 +271,7 @@ test('renders learn react link', () => {
 
 
 def scaffold_nextjs_static(folder: Path) -> bool:
-    """Scaffold NextJS Static Project with testing setup."""
+    """Scaffold Next.jS Static Project with testing setup."""
     arrow_message("Scaffolding Next.js (Static UI)...")
 
     try:
@@ -1208,7 +1208,8 @@ def scaffold_project_complete_delete(folder: Path) -> bool:
         def make_writable(path):
             try:
                 os.chmod(path, 0o777)
-            except Exception:
+            except Exception as ex:
+                print(f"Error while changing permissions: {ex}")
                 pass
 
         # Walk through all files and make them writable
