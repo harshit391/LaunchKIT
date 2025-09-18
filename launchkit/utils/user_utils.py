@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Tuple, Dict, Any
 import names
 
-
 from launchkit.utils.display_utils import boxed_message, rich_message, arrow_message, status_message, exiting_program
 from launchkit.utils.que import Question
 
@@ -206,36 +205,139 @@ def read_docker_configuration(project_folder: Path):
         with open(dockerfile_path, "r") as f:
             dockerfile_content = f.read()
 
-        # Extract key information from Dockerfile
+        # Extract key information from Dockerfile - handle multi-stage builds
         lines = dockerfile_content.split('\n')
+        stages = []
+        current_stage = None
+
         for line in lines:
             line = line.strip()
             if line.startswith('FROM'):
-                docker_info['base_image'] = line.split()[1]
+                parts = line.split()
+                if len(parts) >= 2:
+                    if 'AS' in line.upper():
+                        # Multi-stage build
+                        base_image = parts[1]
+                        stage_name = parts[parts.index('AS') + 1] if 'AS' in [p.upper() for p in parts] else None
+                        stages.append({'name': stage_name, 'base_image': base_image})
+                        current_stage = stage_name
+                    else:
+                        base_image = parts[1]
+                        if not stages:  # First FROM statement
+                            docker_info['base_image'] = base_image
+                        stages.append({'name': current_stage, 'base_image': base_image})
             elif line.startswith('EXPOSE'):
-                docker_info['exposed_port'] = line.split()[1]
+                ports = line.split()[1:]
+                docker_info['exposed_ports'] = ports
             elif line.startswith('WORKDIR'):
                 docker_info['work_dir'] = line.split()[1]
+            elif line.startswith('USER'):
+                docker_info['user'] = line.split()[1]
+            elif line.startswith('HEALTHCHECK'):
+                docker_info['has_healthcheck'] = True
 
-    # Read docker-compose.yml
+        if stages:
+            docker_info['multi_stage'] = True
+            docker_info['stages'] = stages
+            # Set base image from first stage if not set
+            if 'base_image' not in docker_info and stages:
+                docker_info['base_image'] = stages[0]['base_image']
+
+    # Read docker-compose.yml - Enhanced for complex compose files
     compose_path = project_folder / "docker-compose.yml"
     if compose_path.exists():
-        with open(compose_path, "r") as f:
-            compose_content = f.read()
-        docker_info['has_compose'] = True
-        # Extract port mappings from compose file
-        lines = compose_content.split('\n')
-        for line in lines:
-            if 'ports:' in line or line.strip().startswith('- "'):
-                if ':' in line and '"' in line:
-                    port_mapping = line.split('"')[1] if '"' in line else line.strip().replace('- ', '')
-                    if ':' in port_mapping:
-                        docker_info['compose_ports'] = port_mapping
-                        break
+        try:
+            with open(compose_path, "r") as f:
+                compose_content = yaml.safe_load(f)
 
-    # Check .dockerignore
+            docker_info['has_compose'] = True
+
+            # Extract services information
+            if 'services' in compose_content:
+                services = list(compose_content['services'].keys())
+                docker_info['services'] = services
+
+                # Get main app service (usually first one or contains app name)
+                app_service = None
+                project_name = project_folder.name.lower()
+                for service in services:
+                    if any(keyword in service.lower() for keyword in ['app', 'main', 'web', project_name]):
+                        app_service = service
+                        break
+                if not app_service:
+                    app_service = services[0]
+
+                docker_info['main_service'] = app_service
+
+                # Extract port mappings from main service
+                main_service_config = compose_content['services'].get(app_service, {})
+                if 'ports' in main_service_config:
+                    ports = main_service_config['ports']
+                    if ports:
+                        docker_info['compose_ports'] = ports[0] if isinstance(ports[0],
+                                                                              str) else f"{ports[0]}:{ports[0]}"
+
+                # Check for database services
+                db_services = []
+                for service in services:
+                    if any(db in service.lower() for db in ['postgres', 'mongo', 'mysql', 'redis', 'database', 'db']):
+                        db_services.append(service)
+                docker_info['database_services'] = db_services
+
+                # Check for volumes
+                if 'volumes' in compose_content:
+                    docker_info['has_volumes'] = True
+                    docker_info['volumes'] = list(compose_content['volumes'].keys())
+
+                # Check for networks
+                if 'networks' in compose_content:
+                    docker_info['has_networks'] = True
+                    docker_info['networks'] = list(compose_content['networks'].keys())
+
+                # Check for environment files
+                env_files = []
+                for service_name, service_config in compose_content['services'].items():
+                    if 'env_file' in service_config:
+                        env_files.extend(
+                            service_config['env_file'] if isinstance(service_config['env_file'], list) else [
+                                service_config['env_file']])
+                if env_files:
+                    docker_info['env_files'] = list(set(env_files))
+
+        except yaml.YAMLError as e:
+            docker_info['compose_error'] = str(e)
+
+    # Check for additional Docker files
     dockerignore_path = project_folder / ".dockerignore"
     docker_info['has_dockerignore'] = dockerignore_path.exists()
+
+    # Check for production compose file
+    compose_prod_path = project_folder / "docker-compose.prod.yml"
+    docker_info['has_prod_compose'] = compose_prod_path.exists()
+
+    # Check for environment files
+    env_files = ['.env', '.env.example', '.env.local', '.env.production']
+    existing_env_files = []
+    for env_file in env_files:
+        if (project_folder / env_file).exists():
+            existing_env_files.append(env_file)
+    if existing_env_files:
+        docker_info['env_files'] = existing_env_files
+
+    # Check for Docker scripts
+    scripts_dir = project_folder / "scripts"
+    docker_scripts = ['dev.sh', 'prod.sh', 'stop.sh', 'clean.sh']
+    if scripts_dir.exists():
+        existing_scripts = []
+        for script in docker_scripts:
+            if (scripts_dir / script).exists():
+                existing_scripts.append(script)
+        if existing_scripts:
+            docker_info['docker_scripts'] = existing_scripts
+
+    # Check for nginx configuration
+    if (project_folder / "nginx.conf").exists():
+        docker_info['has_nginx_config'] = True
 
     return docker_info
 
@@ -246,38 +348,153 @@ def read_kubernetes_configuration(project_folder: Path):
     k8s_folder = project_folder / "k8s"
 
     if not k8s_folder.exists():
+        # Check for Helm chart
+        helm_folder = project_folder / "helm"
+        if helm_folder.exists():
+            k8s_info['has_helm'] = True
+            chart_dirs = [d for d in helm_folder.iterdir() if d.is_dir()]
+            if chart_dirs:
+                k8s_info['helm_chart'] = chart_dirs[0].name
+                # Read Chart.yaml for more info
+                chart_yaml = chart_dirs[0] / "Chart.yaml"
+                if chart_yaml.exists():
+                    try:
+                        with open(chart_yaml, "r") as f:
+                            chart_data = yaml.safe_load(f)
+                            k8s_info['chart_version'] = chart_data.get('version', 'unknown')
+                            k8s_info['app_version'] = chart_data.get('appVersion', 'unknown')
+                    except yaml.YAMLError:
+                        pass
         return k8s_info
 
-    # Read deployment.yaml
-    deployment_path = k8s_folder / "deployment.yaml"
-    if deployment_path.exists():
-        with open(deployment_path, "r") as f:
-            deployment_content = f.read()
+    # Read base configurations
+    base_folder = k8s_folder / "base"
+    overlays_folder = k8s_folder / "overlays"
 
-        # Extract key information
-        lines = deployment_content.split('\n')
-        for line in lines:
-            line = line.strip()
-            if 'name:' in line and 'deployment' in line.lower():
-                k8s_info['app_name'] = line.split(':')[1].strip().replace('-deployment', '')
-            elif 'namespace:' in line:
-                k8s_info['namespace'] = line.split(':')[1].strip()
-            elif 'replicas:' in line:
-                k8s_info['replicas'] = line.split(':')[1].strip()
-            elif 'containerPort:' in line:
-                k8s_info['container_port'] = line.split(':')[1].strip()
-            elif 'image:' in line and not line.startswith('#'):
-                k8s_info['image'] = line.split(':')[1].strip()
+    # Check for Kustomize structure
+    if base_folder.exists():
+        k8s_info['has_kustomize'] = True
+        k8s_info['environments'] = []
+        if overlays_folder.exists():
+            k8s_info['environments'] = [env.name for env in overlays_folder.iterdir() if env.is_dir()]
 
-    # Check which files exist
-    k8s_files = ['deployment.yaml', 'service.yaml', 'ingress.yaml', 'configmap.yaml', 'kustomization.yaml']
+    # Read deployment.yaml (try base first, then root k8s folder)
+    deployment_paths = [
+        base_folder / "deployment.yaml",
+        k8s_folder / "deployment.yaml"
+    ]
+
+    for deployment_path in deployment_paths:
+        if deployment_path.exists():
+            try:
+                with open(deployment_path, "r") as f:
+                    deployment = yaml.safe_load(f)
+
+                if deployment and 'metadata' in deployment:
+                    k8s_info['app_name'] = deployment['metadata']['name'].replace('-deployment', '')
+                    k8s_info['namespace'] = deployment['metadata'].get('namespace', 'default')
+
+                    if 'spec' in deployment:
+                        k8s_info['replicas'] = deployment['spec'].get('replicas', 1)
+
+                        # Extract container information
+                        if 'template' in deployment['spec'] and 'spec' in deployment['spec']['template']:
+                            containers = deployment['spec']['template']['spec'].get('containers', [])
+                            if containers:
+                                container = containers[0]
+                                k8s_info['image'] = container.get('image', 'unknown')
+
+                                # Get ports
+                                if 'ports' in container:
+                                    k8s_info['container_port'] = container['ports'][0]['containerPort']
+
+                                # Check for resource limits
+                                if 'resources' in container:
+                                    k8s_info['has_resources'] = True
+                                    k8s_info['resources'] = container['resources']
+
+                                # Check for health checks
+                                if 'livenessProbe' in container or 'readinessProbe' in container:
+                                    k8s_info['has_health_checks'] = True
+
+                                # Check for environment variables
+                                if 'env' in container or 'envFrom' in container:
+                                    k8s_info['has_env_vars'] = True
+
+                                # Check for volume mounts
+                                if 'volumeMounts' in container:
+                                    k8s_info['has_volume_mounts'] = True
+
+                break
+            except (yaml.YAMLError, KeyError) as e:
+                k8s_info['deployment_error'] = str(e)
+
+    # Check which files exist in base or root
+    k8s_files = ['namespace.yaml', 'deployment.yaml', 'service.yaml', 'ingress.yaml', 'configmap.yaml',
+                 'secret.yaml', 'serviceaccount.yaml', 'hpa.yaml', 'networkpolicy.yaml',
+                 'poddisruptionbudget.yaml', 'kustomization.yaml']
+
     existing_files = []
     for file_name in k8s_files:
-        if (k8s_folder / file_name).exists():
+        base_file = base_folder / file_name
+        root_file = k8s_folder / file_name
+        if base_file.exists() or root_file.exists():
             existing_files.append(file_name)
 
     k8s_info['existing_files'] = existing_files
     k8s_info['total_files'] = len(existing_files)
+
+    # Check for database configurations
+    db_files = ['postgres.yaml', 'mongodb.yaml', 'redis.yaml']
+    db_configs = []
+    for db_file in db_files:
+        if (base_folder / db_file).exists() or (k8s_folder / db_file).exists():
+            db_configs.append(db_file)
+    if db_configs:
+        k8s_info['database_configs'] = db_configs
+
+    # Check for monitoring configs
+    monitoring_files = ['servicemonitor.yaml', 'prometheusrule.yaml', 'grafana-dashboard.yaml']
+    monitoring_configs = []
+    for mon_file in monitoring_files:
+        if (base_folder / mon_file).exists() or (k8s_folder / mon_file).exists():
+            monitoring_configs.append(mon_file)
+    if monitoring_configs:
+        k8s_info['monitoring_configs'] = monitoring_configs
+
+    # Check for logging configs
+    logging_files = ['fluent-bit.yaml', 'logstash.yaml']
+    logging_configs = []
+    for log_file in logging_files:
+        if (base_folder / log_file).exists() or (k8s_folder / log_file).exists():
+            logging_configs.append(log_file)
+    if logging_configs:
+        k8s_info['logging_configs'] = logging_configs
+
+    # Check for scripts
+    scripts_dir = project_folder / "scripts"
+    k8s_scripts = ['k8s-deploy.sh', 'k8s-status.sh', 'k8s-logs.sh', 'k8s-scale.sh', 'k8s-cleanup.sh', 'k8s-debug.sh',
+                   'k8s-backup.sh']
+    if scripts_dir.exists():
+        existing_k8s_scripts = []
+        for script in k8s_scripts:
+            if (scripts_dir / script).exists():
+                existing_k8s_scripts.append(script)
+        if existing_k8s_scripts:
+            k8s_info['k8s_scripts'] = existing_k8s_scripts
+
+    # Check for Helm chart
+    helm_folder = project_folder / "helm"
+    if helm_folder.exists():
+        k8s_info['has_helm'] = True
+        chart_dirs = [d for d in helm_folder.iterdir() if d.is_dir()]
+        if chart_dirs:
+            k8s_info['helm_chart'] = chart_dirs[0].name
+
+    # Check for Makefile
+    makefile_path = project_folder / "Makefile"
+    if makefile_path.exists():
+        k8s_info['has_makefile'] = True
 
     return k8s_info
 
@@ -367,19 +584,43 @@ def delete_docker_configuration(project_folder: Path, data: dict):
         status_message("No Docker configuration found to delete!", False)
         return data
 
+    # Replace the existing Docker info display with:
+    # Replace the Docker info display section with:
     boxed_message("Current Docker Configuration")
     if 'base_image' in docker_info:
         arrow_message(f"Base Image: {docker_info['base_image']}")
-    if 'exposed_port' in docker_info:
-        arrow_message(f"Exposed Port: {docker_info['exposed_port']}")
+    if 'multi_stage' in docker_info:
+        arrow_message(f"Multi-stage Build: {len(docker_info.get('stages', []))} stages")
+    if 'exposed_ports' in docker_info:
+        arrow_message(f"Exposed Ports: {', '.join(docker_info['exposed_ports'])}")
     if 'work_dir' in docker_info:
         arrow_message(f"Working Directory: {docker_info['work_dir']}")
+    if 'user' in docker_info:
+        arrow_message(f"User: {docker_info['user']}")
+    if docker_info.get('has_healthcheck'):
+        arrow_message("✓ Health checks configured")
     if docker_info.get('has_compose'):
         arrow_message("✓ Docker Compose file exists")
+        if 'services' in docker_info:
+            arrow_message(f"Services: {', '.join(docker_info['services'])}")
         if 'compose_ports' in docker_info:
-            arrow_message(f"Compose Port Mapping: {docker_info['compose_ports']}")
+            arrow_message(f"Port Mapping: {docker_info['compose_ports']}")
+        if 'database_services' in docker_info:
+            arrow_message(f"Database Services: {', '.join(docker_info['database_services'])}")
+        if docker_info.get('has_volumes'):
+            arrow_message(f"Volumes: {', '.join(docker_info.get('volumes', []))}")
+        if docker_info.get('has_networks'):
+            arrow_message(f"Networks: {', '.join(docker_info.get('networks', []))}")
     if docker_info.get('has_dockerignore'):
         arrow_message("✓ .dockerignore file exists")
+    if docker_info.get('has_prod_compose'):
+        arrow_message("✓ Production compose file exists")
+    if docker_info.get('has_nginx_config'):
+        arrow_message("✓ Nginx configuration exists")
+    if 'env_files' in docker_info:
+        arrow_message(f"Environment Files: {', '.join(docker_info['env_files'])}")
+    if 'docker_scripts' in docker_info:
+        arrow_message(f"Docker Scripts: {', '.join(docker_info['docker_scripts'])}")
 
     # Check for running Docker containers and images
     docker_status = check_docker_containers(project_name)
@@ -430,7 +671,11 @@ def delete_docker_configuration(project_folder: Path, data: dict):
                 status_message(f"Failed to stop containers: {error}", False)
 
     # Remove Docker files
-    docker_files = ["Dockerfile", ".dockerignore", "docker-compose.yml"]
+    # Remove Docker files - updated list
+    docker_files = ["Dockerfile", ".dockerignore", "docker-compose.yml", "docker-compose.prod.yml", "nginx.conf",
+                    ".env.example"]
+    docker_scripts = ["dev.sh", "prod.sh", "stop.sh", "clean.sh"]
+
     deleted_files = []
     for file_name in docker_files:
         file_path = project_folder / file_name
@@ -439,8 +684,19 @@ def delete_docker_configuration(project_folder: Path, data: dict):
             deleted_files.append(file_name)
             arrow_message(f"Deleted: {file_name}")
 
-    if deleted_files:
-        arrow_message(f"Successfully deleted {len(deleted_files)} Docker files!")
+    scripts_dir = project_folder / "scripts"
+    deleted_scripts = []
+    if scripts_dir.exists():
+        for script in docker_scripts:
+            script_path = scripts_dir / script
+            if script_path.exists():
+                script_path.unlink()
+                deleted_scripts.append(script)
+                arrow_message(f"Deleted: scripts/{script}")
+
+    if deleted_files or deleted_scripts:
+        total_deleted = len(deleted_files) + len(deleted_scripts)
+        arrow_message(f"Successfully deleted {total_deleted} Docker-related files!")
         # Update addons to remove Docker Support
         if "addons" in data and "Add Docker Support" in data["addons"]:
             data["addons"].remove("Add Docker Support")
@@ -462,6 +718,8 @@ def delete_kubernetes_configuration(project_folder: Path, data: dict):
         status_message("No Kubernetes configuration found to delete!", False)
         return data
 
+    # Replace the existing K8s info display with:
+    # Replace the K8s info display section with:
     boxed_message("Current Kubernetes Configuration")
     if 'app_name' in k8s_info:
         arrow_message(f"App Name: {k8s_info['app_name']}")
@@ -473,10 +731,37 @@ def delete_kubernetes_configuration(project_folder: Path, data: dict):
         arrow_message(f"Container Port: {k8s_info['container_port']}")
     if 'image' in k8s_info:
         arrow_message(f"Container Image: {k8s_info['image']}")
+    if k8s_info.get('has_resources'):
+        arrow_message("✓ Resource limits configured")
+    if k8s_info.get('has_health_checks'):
+        arrow_message("✓ Health checks configured")
+    if k8s_info.get('has_env_vars'):
+        arrow_message("✓ Environment variables configured")
+    if k8s_info.get('has_volume_mounts'):
+        arrow_message("✓ Volume mounts configured")
+    if k8s_info.get('has_kustomize'):
+        arrow_message("✓ Kustomize structure detected")
+        if 'environments' in k8s_info:
+            arrow_message(f"Environments: {', '.join(k8s_info['environments'])}")
 
-    arrow_message(f"Total K8s files found: {k8s_info['total_files']}")
+    arrow_message(f"Total K8s files found: {k8s_info.get('total_files', 0)}")
     if k8s_info.get('existing_files'):
-        arrow_message(f"Files: {', '.join(k8s_info['existing_files'])}")
+        arrow_message(f"Core Files: {', '.join(k8s_info['existing_files'])}")
+    if 'database_configs' in k8s_info and k8s_info['database_configs']:
+        arrow_message(f"Database Configs: {', '.join(k8s_info['database_configs'])}")
+    if 'monitoring_configs' in k8s_info and k8s_info['monitoring_configs']:
+        arrow_message(f"Monitoring Configs: {', '.join(k8s_info['monitoring_configs'])}")
+    if 'logging_configs' in k8s_info and k8s_info['logging_configs']:
+        arrow_message(f"Logging Configs: {', '.join(k8s_info['logging_configs'])}")
+    if k8s_info.get('has_helm'):
+        chart_info = k8s_info.get('helm_chart', 'Available')
+        if 'chart_version' in k8s_info:
+            chart_info += f" (v{k8s_info['chart_version']})"
+        arrow_message(f"✓ Helm Chart: {chart_info}")
+    if k8s_info.get('has_makefile'):
+        arrow_message("✓ Makefile for Helm management")
+    if 'k8s_scripts' in k8s_info:
+        arrow_message(f"K8s Scripts: {', '.join(k8s_info['k8s_scripts'])}")
 
     # Check for running Kubernetes resources
     namespace = k8s_info.get('namespace', 'default')
@@ -546,10 +831,44 @@ def delete_kubernetes_configuration(project_folder: Path, data: dict):
 
     # Remove k8s directory and all files
     k8s_folder = project_folder / "k8s"
+    helm_folder = project_folder / "helm"
+    scripts_dir = project_folder / "scripts"
+
+    deleted_items = []
+
     if k8s_folder.exists():
         shutil.rmtree(k8s_folder)
+        deleted_items.append("k8s/ directory")
         arrow_message("Deleted: k8s/ directory and all its contents")
-        arrow_message("Successfully deleted all Kubernetes configuration files!")
+
+    if helm_folder.exists():
+        shutil.rmtree(helm_folder)
+        deleted_items.append("helm/ directory")
+        arrow_message("Deleted: helm/ directory and all its contents")
+
+    # Delete K8s scripts
+    # Delete K8s scripts - updated list
+    k8s_scripts = ['k8s-deploy.sh', 'k8s-status.sh', 'k8s-logs.sh', 'k8s-scale.sh', 'k8s-cleanup.sh', 'k8s-debug.sh',
+                   'k8s-backup.sh']
+    deleted_scripts = []
+    if scripts_dir.exists():
+        for script in k8s_scripts:
+            script_path = scripts_dir / script
+            if script_path.exists():
+                script_path.unlink()
+                deleted_scripts.append(script)
+                arrow_message(f"Deleted: scripts/{script}")
+
+    # Delete Makefile if it exists
+    makefile_path = project_folder / "Makefile"
+    if makefile_path.exists():
+        makefile_path.unlink()
+        deleted_items.append("Makefile")
+        arrow_message("Deleted: Makefile")
+
+    if deleted_items or deleted_scripts:
+        total_deleted = len(deleted_items) + len(deleted_scripts)
+        arrow_message(f"Successfully deleted all Kubernetes configuration ({total_deleted} items)!")
 
         # Update addons to remove Kubernetes Support
         if "addons" in data and "Add Kubernetes Support" in data["addons"]:
@@ -570,19 +889,43 @@ def edit_docker_configuration(project_folder: Path, data: dict):
         status_message("No Docker configuration found to edit!", False)
         return data
 
+    # Replace the existing Docker info display with:
+    # Replace the Docker info display section with the same improved format from the delete function:
     boxed_message("Current Docker Configuration")
     if 'base_image' in docker_info:
         arrow_message(f"Base Image: {docker_info['base_image']}")
-    if 'exposed_port' in docker_info:
-        arrow_message(f"Exposed Port: {docker_info['exposed_port']}")
+    if 'multi_stage' in docker_info:
+        arrow_message(f"Multi-stage Build: {len(docker_info.get('stages', []))} stages")
+    if 'exposed_ports' in docker_info:
+        arrow_message(f"Exposed Ports: {', '.join(docker_info['exposed_ports'])}")
     if 'work_dir' in docker_info:
         arrow_message(f"Working Directory: {docker_info['work_dir']}")
+    if 'user' in docker_info:
+        arrow_message(f"User: {docker_info['user']}")
+    if docker_info.get('has_healthcheck'):
+        arrow_message("✓ Health checks configured")
     if docker_info.get('has_compose'):
         arrow_message("✓ Docker Compose file exists")
+        if 'services' in docker_info:
+            arrow_message(f"Services: {', '.join(docker_info['services'])}")
         if 'compose_ports' in docker_info:
-            arrow_message(f"Compose Port Mapping: {docker_info['compose_ports']}")
+            arrow_message(f"Port Mapping: {docker_info['compose_ports']}")
+        if 'database_services' in docker_info:
+            arrow_message(f"Database Services: {', '.join(docker_info['database_services'])}")
+        if docker_info.get('has_volumes'):
+            arrow_message(f"Volumes: {', '.join(docker_info.get('volumes', []))}")
+        if docker_info.get('has_networks'):
+            arrow_message(f"Networks: {', '.join(docker_info.get('networks', []))}")
     if docker_info.get('has_dockerignore'):
         arrow_message("✓ .dockerignore file exists")
+    if docker_info.get('has_prod_compose'):
+        arrow_message("✓ Production compose file exists")
+    if docker_info.get('has_nginx_config'):
+        arrow_message("✓ Nginx configuration exists")
+    if 'env_files' in docker_info:
+        arrow_message(f"Environment Files: {', '.join(docker_info['env_files'])}")
+    if 'docker_scripts' in docker_info:
+        arrow_message(f"Docker Scripts: {', '.join(docker_info['docker_scripts'])}")
 
     # Add "Back to Main Menu" option
     edit_options = docker_edit_options + ["Back to Main Menu"]
@@ -723,6 +1066,8 @@ def edit_kubernetes_configuration(project_folder: Path, data: dict):
         status_message("No Kubernetes configuration found to edit!", False)
         return data
 
+    # Replace the existing K8s info display with:
+    # Replace the K8s info display section with the same improved format from the delete function:
     boxed_message("Current Kubernetes Configuration")
     if 'app_name' in k8s_info:
         arrow_message(f"App Name: {k8s_info['app_name']}")
@@ -734,6 +1079,37 @@ def edit_kubernetes_configuration(project_folder: Path, data: dict):
         arrow_message(f"Container Port: {k8s_info['container_port']}")
     if 'image' in k8s_info:
         arrow_message(f"Container Image: {k8s_info['image']}")
+    if k8s_info.get('has_resources'):
+        arrow_message("✓ Resource limits configured")
+    if k8s_info.get('has_health_checks'):
+        arrow_message("✓ Health checks configured")
+    if k8s_info.get('has_env_vars'):
+        arrow_message("✓ Environment variables configured")
+    if k8s_info.get('has_volume_mounts'):
+        arrow_message("✓ Volume mounts configured")
+    if k8s_info.get('has_kustomize'):
+        arrow_message("✓ Kustomize structure detected")
+        if 'environments' in k8s_info:
+            arrow_message(f"Environments: {', '.join(k8s_info['environments'])}")
+
+    arrow_message(f"Total K8s files found: {k8s_info.get('total_files', 0)}")
+    if k8s_info.get('existing_files'):
+        arrow_message(f"Core Files: {', '.join(k8s_info['existing_files'])}")
+    if 'database_configs' in k8s_info and k8s_info['database_configs']:
+        arrow_message(f"Database Configs: {', '.join(k8s_info['database_configs'])}")
+    if 'monitoring_configs' in k8s_info and k8s_info['monitoring_configs']:
+        arrow_message(f"Monitoring Configs: {', '.join(k8s_info['monitoring_configs'])}")
+    if 'logging_configs' in k8s_info and k8s_info['logging_configs']:
+        arrow_message(f"Logging Configs: {', '.join(k8s_info['logging_configs'])}")
+    if k8s_info.get('has_helm'):
+        chart_info = k8s_info.get('helm_chart', 'Available')
+        if 'chart_version' in k8s_info:
+            chart_info += f" (v{k8s_info['chart_version']})"
+        arrow_message(f"✓ Helm Chart: {chart_info}")
+    if k8s_info.get('has_makefile'):
+        arrow_message("✓ Makefile for Helm management")
+    if 'k8s_scripts' in k8s_info:
+        arrow_message(f"K8s Scripts: {', '.join(k8s_info['k8s_scripts'])}")
 
     # Add "Back to Main Menu" option
     edit_options = kubernetes_edit_options + ["Back to Main Menu"]
@@ -744,7 +1120,20 @@ def edit_kubernetes_configuration(project_folder: Path, data: dict):
         if "Back" in edit_choice:
             break
 
-        deployment_path = project_folder / "k8s" / "deployment.yaml"
+        deployment_paths = [
+            project_folder / "k8s" / "base" / "deployment.yaml",
+            project_folder / "k8s" / "deployment.yaml"
+        ]
+
+        deployment_path = None
+        for path in deployment_paths:
+            if path.exists():
+                deployment_path = path
+                break
+
+        if not deployment_path:
+            status_message("deployment.yaml not found in any expected location!", False)
+            continue
 
         if "Change Container Image" in edit_choice:
             current_image = k8s_info.get('image', 'Not set')
@@ -809,52 +1198,115 @@ def edit_kubernetes_configuration(project_folder: Path, data: dict):
                 arrow_message(f"Container port updated to: {new_port}")
                 k8s_info['container_port'] = new_port
 
+
         elif "Change Namespace" in edit_choice:
+
             current_namespace = k8s_info.get('namespace', 'default')
+
             arrow_message(f"Current namespace: {current_namespace}")
 
             # Provide common namespace options
+
             namespace_options = ["default", "kube-system", "production", "staging", "development",
+
                                  "Custom (Enter manually)"]
 
             namespace_choice = Question("Select a namespace:", namespace_options).ask()
 
             if "Custom" in namespace_choice:
+
                 new_namespace = input("Enter the namespace: ").strip()
+
             else:
+
                 new_namespace = namespace_choice
 
             if new_namespace and update_kubernetes_deployment(deployment_path, "namespace", new_namespace):
+
                 arrow_message(f"Namespace updated to: {new_namespace}")
+
                 k8s_info['namespace'] = new_namespace
 
-                # Also update service.yaml if it exists
-                service_path = project_folder / "k8s" / "service.yaml"
-                if service_path.exists():
-                    try:
-                        with open(service_path, "r") as f:
-                            service = yaml.safe_load(f)
-                        service['metadata']['namespace'] = new_namespace
-                        with open(service_path, "w") as f:
-                            yaml.dump(service, f, default_flow_style=False)
-                        arrow_message("Service namespace also updated")
-                    except Exception as e:
-                        status_message(f"Failed to update service namespace: {e}", False)
+                # Also update service.yaml if it exists - check both locations
+
+                service_paths = [
+
+                    project_folder / "k8s" / "base" / "service.yaml",
+
+                    project_folder / "k8s" / "service.yaml"
+
+                ]
+
+                service_updated = False
+
+                for service_path in service_paths:
+
+                    if service_path.exists():
+
+                        try:
+
+                            with open(service_path, "r") as f:
+
+                                service = yaml.safe_load(f)
+
+                            service['metadata']['namespace'] = new_namespace
+
+                            with open(service_path, "w") as f:
+
+                                yaml.dump(service, f, default_flow_style=False)
+
+                            arrow_message(f"Service namespace updated in {service_path.name}")
+
+                            service_updated = True
+
+                            break
+
+                        except Exception as e:
+
+                            status_message(f"Failed to update service namespace in {service_path.name}: {e}", False)
+
+                if not service_updated:
+                    status_message("service.yaml not found in expected locations", False)
+
 
         elif "Update Service Type" in edit_choice:
-            service_path = project_folder / "k8s" / "service.yaml"
-            if not service_path.exists():
-                status_message("service.yaml not found!", False)
+
+            # Check both possible locations for service.yaml
+
+            service_paths = [
+
+                project_folder / "k8s" / "base" / "service.yaml",
+
+                project_folder / "k8s" / "service.yaml"
+
+            ]
+
+            service_path = None
+
+            for path in service_paths:
+
+                if path.exists():
+                    service_path = path
+
+                    break
+
+            if not service_path:
+                status_message("service.yaml not found in any expected location!", False)
+
                 continue
 
             try:
+
                 with open(service_path, "r") as f:
+
                     service = yaml.safe_load(f)
 
                 current_type = service.get('spec', {}).get('type', 'ClusterIP')
+
                 arrow_message(f"Current service type: {current_type}")
 
                 # Provide service type options
+
                 service_types = ["ClusterIP", "NodePort", "LoadBalancer", "ExternalName"]
 
                 type_choice = Question("Select service type:", service_types).ask()
@@ -862,11 +1314,14 @@ def edit_kubernetes_configuration(project_folder: Path, data: dict):
                 service['spec']['type'] = type_choice
 
                 with open(service_path, "w") as f:
+
                     yaml.dump(service, f, default_flow_style=False)
 
-                arrow_message(f"Service type updated to: {type_choice}")
+                arrow_message(f"Service type updated to: {type_choice} in {service_path.name}")
+
 
             except Exception as e:
+
                 status_message(f"Failed to update service type: {e}", False)
 
         elif "Modify Resource Limits" in edit_choice:

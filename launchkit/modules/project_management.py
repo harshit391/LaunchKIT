@@ -640,15 +640,15 @@ def run_tests(data, folder):
                 print(folder)
                 if (folder / "jest.config.json").exists():
                     print("3\n")
-                    result = subprocess.run(["npm", "test", "--", "--watchAll=false"],
-                                            cwd=folder, capture_output=True, text=True, shell=True)
+                    subprocess.run(["npm", "test", "--", "--watchAll=false"],
+                                            cwd=folder, shell=True)
                 elif (folder / "vitest.config.js").exists():
                     print("4\n")
                     subprocess.run(["npm", "run", "test"], cwd=folder, shell=True)
                 elif (folder / "package.json").exists():
                     print("5\n")
-                    result = subprocess.run(["npm", "test", "--", "--watchAll=false"],
-                                            cwd=folder, capture_output=True, text=True, shell=True)
+                    subprocess.run(["npm", "test", "--", "--watchAll=false"],
+                                            cwd=folder, shell=True)
                     print("5.5\n")
                 else:
                     print("6\n")
