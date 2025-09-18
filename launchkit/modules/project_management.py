@@ -613,7 +613,6 @@ def run_tests(data, folder):
 
     try:
         if _is_node_based_stack(stack):
-            print("\n1\n")
             if "Flask + React" in stack:
                 # Run tests for both frontend and backend
                 progress_message("Running fullstack tests...")
@@ -636,22 +635,15 @@ def run_tests(data, folder):
 
             else:
                 # Regular Node.js/React tests
-                print("2\n")
-                print(folder)
                 if (folder / "jest.config.json").exists():
-                    print("3\n")
                     subprocess.run(["npm", "test", "--", "--watchAll=false"],
                                             cwd=folder, shell=True)
                 elif (folder / "vitest.config.js").exists():
-                    print("4\n")
                     subprocess.run(["npm", "run", "test"], cwd=folder, shell=True)
                 elif (folder / "package.json").exists():
-                    print("5\n")
                     subprocess.run(["npm", "test", "--", "--watchAll=false"],
                                             cwd=folder, shell=True)
-                    print("5.5\n")
                 else:
-                    print("6\n")
                     status_message("No test configuration found", False)
                     return
 
@@ -667,16 +659,13 @@ def run_tests(data, folder):
                 #         arrow_message(result.stderr.strip())
 
         elif _is_python_based_stack(stack):
-            print("7\n")
             run_python_tests(folder)
 
         else:
-            print("8\n")
             status_message("Test runner not configured for this stack", False)
             arrow_message("You can manually run tests in your project folder")
 
     except Exception as e:
-        print("9\n")
         status_message(f"Error running tests: {e}", False)
 
 
