@@ -958,7 +958,7 @@ def deploy_app(data):
     elif deploy_choice == "Deploy to Kubernetes":
         deploy_to_kubernetes(data)
     elif deploy_choice == "Setup Automated Deployment":
-        setup_automated_deployment(data)
+        setup_automated_deployment(data["selected_folder"])
     elif "Vercel" in deploy_choice:
         show_vercel_deployment_guide(data)
     elif "Heroku" in deploy_choice:
