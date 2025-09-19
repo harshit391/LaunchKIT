@@ -17,7 +17,7 @@ def boxed_message(msg: str):
 
 
 def arrow_message(step: str):
-    print(f"\n➡️  {step}\n")
+    print(f"➡️  {step}\n")
 
 
 import sys

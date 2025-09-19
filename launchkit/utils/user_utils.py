@@ -2579,7 +2579,7 @@ def get_all_docker_containers(include_stopped: bool = True) -> List[Dict[str, An
     # Get running containers
     flag = "--all" if include_stopped else ""
     success, output, error = run_command_with_output(
-        f"docker ps {flag} --format 'json'"
+        f'docker ps {flag} --format "json"'
     )
 
     if not success:
@@ -2611,7 +2611,7 @@ def get_all_docker_images() -> List[Dict[str, Any]]:
     images = []
 
     success, output, error = run_command_with_output(
-        "docker images --format 'json'"
+        'docker images --format "json"'
     )
 
     if not success:

@@ -576,7 +576,7 @@ def build_production(data, folder):
             else:
                 # Regular React/Node.js build
                 progress_message("Building React/Node.js application...")
-                result = subprocess.run(["npm", "run", "build"], cwd=folder, capture_output=True, text=True)
+                result = subprocess.run(["npm", "run", "build"], cwd=folder, capture_output=True, text=True, shell=True)
                 if result.returncode == 0:
                     status_message("Production build completed successfully!", True)
                     arrow_message("Build files are typically in the 'build' or 'dist' folder")
