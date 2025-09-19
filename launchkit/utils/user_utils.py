@@ -7,10 +7,16 @@ import subprocess
 import yaml
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, List
 import names
 
-from launchkit.utils.display_utils import boxed_message, rich_message, arrow_message, status_message, exiting_program
+from launchkit.utils.display_utils import (
+    boxed_message,
+    rich_message,
+    arrow_message,
+    status_message,
+    exiting_program,
+)
 from launchkit.utils.que import Question
 
 # Possible user choices for identity
@@ -18,7 +24,11 @@ user_identity = ["Yes, Sure", "Keep it Anonymous"]
 
 # Docker and Kubernetes configuration options
 docker_actions = ["Edit Docker Configuration", "Delete Docker Configuration"]
-kubernetes_actions = ["Edit Kubernetes Configuration", "Delete Kubernetes Configuration"]
+
+kubernetes_actions = [
+    "Edit Kubernetes Configuration",
+    "Delete Kubernetes Configuration",
+]
 
 # Docker edit options
 docker_edit_options = [
@@ -29,7 +39,7 @@ docker_edit_options = [
     "Add/Remove Environment Variables",
     "Modify Volumes",
     "Update Build Context",
-    "Custom Configuration"
+    "Custom Configuration",
 ]
 
 # Kubernetes edit options
@@ -41,12 +51,55 @@ kubernetes_edit_options = [
     "Update Service Type",
     "Modify Resource Limits",
     "Update Environment Variables",
-    "Custom Configuration"
+    "Custom Configuration",
+]
+
+# Global container management options
+global_docker_actions = [
+    "List All Docker Containers",
+    "List All Docker Images",
+    "Inspect Container/Image",
+    "Container Operations (Start/Stop/Restart)",
+    "Remove Container/Image",
+    "Docker System Information",
+    "Clean Docker Resources",
+    "View Container Logs",
+    "Execute Commands in Container",
+    "Create New Container",
+    "Back to Main Menu",
+]
+
+global_kubernetes_actions = [
+    "List All Pods",
+    "List All Deployments",
+    "List All Services",
+    "List All Namespaces",
+    "Inspect Resource (Pod/Deployment/Service)",
+    "Pod Operations (Delete/Restart/Scale)",
+    "View Pod Logs",
+    "Execute Commands in Pod",
+    "Port Forward to Pod/Service",
+    "Apply/Delete Kubernetes Manifests",
+    "Kubernetes Cluster Information",
+    "Back to Main Menu",
+]
+
+# Project-specific container actions
+project_container_actions = [
+    "View Project Containers",
+    "Manage Project Images",
+    "Container Logs for Project",
+    "Scale Project Containers",
+    "Update Project Containers",
+    "Clean Project Resources",
+    "Deploy/Redeploy Project",
+    "Back to Main Menu",
 ]
 
 
 def get_base_launchkit_folder():
     """Get or create the base launchkit projects folder."""
+
     base_folder = Path.home() / "launchkit_projects"
     base_folder.mkdir(exist_ok=True)
     return base_folder
@@ -54,22 +107,25 @@ def get_base_launchkit_folder():
 
 def create_backup(project_folder: Path):
     """Create a timestamped backup of data.json inside project's backup folder."""
+
     backup_folder = project_folder / "launchkit_backup"
     backup_folder.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     backup_file = backup_folder / f"data-{timestamp}.json"
-
     data_file = project_folder / "data.json"
+
     if data_file.exists():
         shutil.copy(data_file, backup_file)
         arrow_message(f"Backup created: {backup_file}")
         return backup_file
+
     return None
 
 
 def restore_backup(project_folder: Path):
     """Allow user to select a backup to restore data.json."""
+
     backup_folder = project_folder / "launchkit_backup"
 
     if not backup_folder.exists() or not any(backup_folder.iterdir()):
@@ -96,6 +152,7 @@ def restore_backup(project_folder: Path):
 
 def list_existing_projects():
     """List all existing projects in the base launchkit folder."""
+
     base_folder = get_base_launchkit_folder()
     projects = []
 
@@ -106,29 +163,39 @@ def list_existing_projects():
     return projects
 
 
-def run_command(command: str, capture_output: bool = True) -> tuple:
-    """Run a shell command and return success status and output."""
+def run_command_with_output(
+    command: str, capture_output: bool = True, timeout: int = 30
+) -> tuple:
+    """Enhanced command execution with better output handling."""
+
     try:
         result = subprocess.run(
             command,
             shell=True,
             capture_output=capture_output,
             text=True,
-            timeout=30
+            timeout=timeout,
         )
         return result.returncode == 0, result.stdout, result.stderr
     except subprocess.TimeoutExpired:
-        return False, "", "Command timed out"
+        return False, "", f"Command timed out after {timeout} seconds"
     except Exception as e:
         return False, "", str(e)
 
 
+# Keep the old function for backward compatibility
+def run_command(command: str, capture_output: bool = True) -> tuple:
+    """Run a shell command and return success status and output."""
+    return run_command_with_output(command, capture_output, 30)
+
+
 def check_docker_containers(project_name: str) -> Dict[str, Any]:
     """Check for running Docker containers and images related to the project."""
+
     docker_status = {
-        'containers': [],
-        'images': [],
-        'docker_available': False
+        "containers": [],
+        "images": [],
+        "docker_available": False,
     }
 
     # Check if Docker is available
@@ -136,35 +203,41 @@ def check_docker_containers(project_name: str) -> Dict[str, Any]:
     if not success:
         return docker_status
 
-    docker_status['docker_available'] = True
+    docker_status["docker_available"] = True
 
     # Check for running containers
-    success, output, _ = run_command(f"docker ps --format 'table {{{{.Names}}}}\\t{{{{.Image}}}}\\t{{{{.Status}}}}'")
+    success, output, _ = run_command(
+        f"docker ps --format 'table {{.Names}}\\t{{.Image}}\\t{{.Status}}'"
+    )
     if success and output:
-        lines = output.strip().split('\n')[1:]  # Skip header
+        lines = output.strip().split("\n")[1:]  # Skip header
         for line in lines:
             if project_name.lower() in line.lower():
-                docker_status['containers'].append(line.strip())
+                docker_status["containers"].append(line.strip())
 
     # Check for images
     success, output, _ = run_command(
-        f"docker images --format 'table {{{{.Repository}}}}\\t{{{{.Tag}}}}\\t{{{{.Size}}}}'")
+        f"docker images --format 'table {{.Repository}}\\t{{.Tag}}\\t{{.Size}}'"
+    )
     if success and output:
-        lines = output.strip().split('\n')[1:]  # Skip header
+        lines = output.strip().split("\n")[1:]  # Skip header
         for line in lines:
             if project_name.lower() in line.lower():
-                docker_status['images'].append(line.strip())
+                docker_status["images"].append(line.strip())
 
     return docker_status
 
 
-def check_kubernetes_resources(project_name: str, namespace: str = "default") -> Dict[str, Any]:
+def check_kubernetes_resources(
+    project_name: str, namespace: str = "default"
+) -> Dict[str, Any]:
     """Check for Kubernetes resources related to the project."""
+
     k8s_status = {
-        'deployments': [],
-        'services': [],
-        'pods': [],
-        'kubectl_available': False
+        "deployments": [],
+        "services": [],
+        "pods": [],
+        "kubectl_available": False,
     }
 
     # Check if kubectl is available
@@ -172,29 +245,2029 @@ def check_kubernetes_resources(project_name: str, namespace: str = "default") ->
     if not success:
         return k8s_status
 
-    k8s_status['kubectl_available'] = True
+    k8s_status["kubectl_available"] = True
 
     # Check deployments
-    success, output, _ = run_command(f"kubectl get deployments -n {namespace} -o name")
+    success, output, _ = run_command(
+        f"kubectl get deployments -n {namespace} -o name"
+    )
     if success and output:
-        deployments = [dep.strip() for dep in output.split('\n') if project_name.lower() in dep.lower()]
-        k8s_status['deployments'] = deployments
+        deployments = [
+            dep.strip() for dep in output.split("\n") if project_name.lower() in dep.lower()
+        ]
+        k8s_status["deployments"] = deployments
 
     # Check services
-    success, output, _ = run_command(f"kubectl get services -n {namespace} -o name")
+    success, output, _ = run_command(
+        f"kubectl get services -n {namespace} -o name"
+    )
     if success and output:
-        services = [svc.strip() for svc in output.split('\n') if project_name.lower() in svc.lower()]
-        k8s_status['services'] = services
+        services = [
+            svc.strip() for svc in output.split("\n") if project_name.lower() in svc.lower()
+        ]
+        k8s_status["services"] = services
 
     # Check pods
     success, output, _ = run_command(f"kubectl get pods -n {namespace} -o name")
     if success and output:
-        pods = [pod.strip() for pod in output.split('\n') if project_name.lower() in pod.lower()]
-        k8s_status['pods'] = pods
+        pods = [
+            pod.strip() for pod in output.split("\n") if project_name.lower() in pod.lower()
+        ]
+        k8s_status["pods"] = pods
 
     return k8s_status
 
 
+# =============================================================================
+# MISSING FUNCTION IMPLEMENTATIONS FOR USER_UTILS.PY
+# =============================================================================
+
+def inspect_docker_resource():
+    """Inspect Docker containers or images with detailed information."""
+    while True:
+        resource_type = Question(
+            "What would you like to inspect?",
+            ["Container", "Image", "Back to Menu"]
+        ).ask()
+
+        if "Back" in resource_type:
+            break
+
+        if "Container" in resource_type:
+            containers = get_all_docker_containers(True)
+            if not containers:
+                status_message("No containers found.", False)
+                continue
+
+            container_choices = [f"{c['name']} ({c['status']})" for c in containers]
+            container_choice = Question("Select container to inspect:", container_choices).ask()
+            container_name = container_choice.split(" (")[0]
+
+            success, output, error = run_command_with_output(f"docker inspect {container_name}")
+            if success:
+                boxed_message(f"Container Inspection: {container_name}")
+                print(output)
+            else:
+                status_message(f"Failed to inspect container: {error}", False)
+
+        elif "Image" in resource_type:
+            images = get_all_docker_images()
+            if not images:
+                status_message("No images found.", False)
+                continue
+
+            image_choices = [f"{i['repository']}:{i['tag']}" for i in images]
+            image_choice = Question("Select image to inspect:", image_choices).ask()
+
+            success, output, error = run_command_with_output(f"docker inspect {image_choice}")
+            if success:
+                boxed_message(f"Image Inspection: {image_choice}")
+                print(output)
+            else:
+                status_message(f"Failed to inspect image: {error}", False)
+
+        input("\nPress Enter to continue...")
+
+def remove_docker_resource():
+    """Remove Docker containers or images."""
+    while True:
+        resource_type = Question(
+            "What would you like to remove?",
+            ["Container", "Image", "Unused Resources", "Back to Menu"]
+        ).ask()
+
+        if "Back" in resource_type:
+            break
+
+        if "Container" in resource_type:
+            containers = get_all_docker_containers(True)
+            if not containers:
+                status_message("No containers found.", False)
+                continue
+
+            container_choices = [f"{c['name']} ({c['status']})" for c in containers]
+            container_choices.append("Remove All Stopped Containers")
+
+            container_choice = Question("Select container to remove:", container_choices).ask()
+
+            if "Remove All" in container_choice:
+                confirm = Question("Are you sure you want to remove ALL stopped containers?",
+                                 ["Yes", "No"]).ask()
+                if confirm == "Yes":
+                    success, output, error = run_command_with_output("docker container prune -f")
+                    if success:
+                        arrow_message("All stopped containers removed successfully")
+                    else:
+                        status_message(f"Failed to remove stopped containers: {error}", False)
+            else:
+                container_name = container_choice.split(" (")[0]
+                force = Question("Force remove container?", ["Yes", "No"]).ask()
+                force_flag = "-f" if force == "Yes" else ""
+
+                success, output, error = run_command_with_output(f"docker rm {force_flag} {container_name}")
+                if success:
+                    arrow_message(f"Container {container_name} removed successfully")
+                else:
+                    status_message(f"Failed to remove container: {error}", False)
+
+        elif "Image" in resource_type:
+            images = get_all_docker_images()
+            if not images:
+                status_message("No images found.", False)
+                continue
+
+            image_choices = [f"{i['repository']}:{i['tag']}" for i in images]
+            image_choices.append("Remove Dangling Images")
+            image_choices.append("Remove Unused Images")
+
+            image_choice = Question("Select image to remove:", image_choices).ask()
+
+            if "Dangling" in image_choice:
+                success, output, error = run_command_with_output("docker image prune -f")
+                if success:
+                    arrow_message("Dangling images removed successfully")
+                else:
+                    status_message(f"Failed to remove dangling images: {error}", False)
+            elif "Unused" in image_choice:
+                success, output, error = run_command_with_output("docker image prune -a -f")
+                if success:
+                    arrow_message("Unused images removed successfully")
+                else:
+                    status_message(f"Failed to remove unused images: {error}", False)
+            else:
+                force = Question("Force remove image?", ["Yes", "No"]).ask()
+                force_flag = "-f" if force == "Yes" else ""
+
+                success, output, error = run_command_with_output(f"docker rmi {force_flag} {image_choice}")
+                if success:
+                    arrow_message(f"Image {image_choice} removed successfully")
+                else:
+                    status_message(f"Failed to remove image: {error}", False)
+
+        elif "Unused Resources" in resource_type:
+            confirm = Question("Remove all unused Docker resources (containers, networks, images)?",
+                             ["Yes", "No"]).ask()
+            if confirm == "Yes":
+                success, output, error = run_command_with_output("docker system prune -a -f")
+                if success:
+                    arrow_message("All unused Docker resources removed successfully")
+                    if output:
+                        print(output)
+                else:
+                    status_message(f"Failed to remove unused resources: {error}", False)
+
+        input("\nPress Enter to continue...")
+
+def docker_system_info():
+    """Display comprehensive Docker system information."""
+    boxed_message("Docker System Information")
+
+    # Docker version
+    success, output, error = run_command_with_output("docker version")
+    if success:
+        arrow_message("Docker Version:")
+        print(output)
+    else:
+        status_message(f"Failed to get Docker version: {error}", False)
+
+    print("\n" + "="*50)
+
+    # System info
+    success, output, error = run_command_with_output("docker system df")
+    if success:
+        arrow_message("Docker System Usage:")
+        print(output)
+    else:
+        status_message(f"Failed to get system usage: {error}", False)
+
+    print("\n" + "="*50)
+
+    # Docker info
+    success, output, error = run_command_with_output("docker info")
+    if success:
+        arrow_message("Docker System Info:")
+        print(output)
+    else:
+        status_message(f"Failed to get Docker info: {error}", False)
+
+    input("\nPress Enter to continue...")
+
+def clean_docker_resources():
+    """Clean Docker resources with different options."""
+    cleanup_options = [
+        "Remove stopped containers",
+        "Remove dangling images",
+        "Remove unused images",
+        "Remove unused networks",
+        "Remove unused volumes",
+        "Clean everything (system prune)",
+        "Back to Menu"
+    ]
+
+    while True:
+        cleanup_choice = Question("Select cleanup option:", cleanup_options).ask()
+
+        if "Back" in cleanup_choice:
+            break
+
+        confirm = Question(f"Are you sure you want to: {cleanup_choice}?", ["Yes", "No"]).ask()
+        if confirm != "Yes":
+            continue
+
+        success = output = error = ""
+
+        if "stopped containers" in cleanup_choice:
+            success, output, error = run_command_with_output("docker container prune -f")
+        elif "dangling images" in cleanup_choice:
+            success, output, error = run_command_with_output("docker image prune -f")
+        elif "unused images" in cleanup_choice:
+            success, output, error = run_command_with_output("docker image prune -a -f")
+        elif "unused networks" in cleanup_choice:
+            success, output, error = run_command_with_output("docker network prune -f")
+        elif "unused volumes" in cleanup_choice:
+            success, output, error = run_command_with_output("docker volume prune -f")
+        elif "Clean everything" in cleanup_choice:
+            success, output, error = run_command_with_output("docker system prune -a -f --volumes")
+
+        if success:
+            arrow_message(f"Successfully completed: {cleanup_choice}")
+            if output:
+                print(output)
+        else:
+            status_message(f"Failed to {cleanup_choice}: {error}", False)
+
+        input("\nPress Enter to continue...")
+
+def execute_commands_in_container():
+    """Execute commands inside Docker containers."""
+    containers = get_all_docker_containers(False)  # Only running containers
+    if not containers:
+        status_message("No running containers found.", False)
+        return
+
+    container_choices = [c['name'] for c in containers]
+    container_name = Question("Select container to execute command:", container_choices).ask()
+
+    command_options = [
+        "/bin/bash",
+        "/bin/sh",
+        "ls -la",
+        "ps aux",
+        "env",
+        "Custom command"
+    ]
+
+    command_choice = Question("Select command to execute:", command_options).ask()
+
+    if "Custom" in command_choice:
+        custom_command = input("Enter command to execute: ").strip()
+        if not custom_command:
+            status_message("No command entered.", False)
+            return
+        command = custom_command
+    else:
+        command = command_choice
+
+    # Check if it's an interactive shell command
+    if command in ["/bin/bash", "/bin/sh"]:
+        boxed_message(f"Starting interactive shell in {container_name}")
+        print("Type 'exit' to return to LaunchKit")
+        subprocess.run(f"docker exec -it {container_name} {command}", shell=True)
+    else:
+        success, output, error = run_command_with_output(f"docker exec {container_name} {command}")
+        if success:
+            boxed_message(f"Command Output from {container_name}")
+            print(output)
+        else:
+            status_message(f"Command failed: {error}", False)
+
+    input("\nPress Enter to continue...")
+
+def create_new_container_from_projects():
+    """Create new Docker container/image from existing projects."""
+    existing_projects = list_existing_projects()
+    if not existing_projects:
+        status_message("No projects found! Please create a project first.", False)
+        return
+
+    boxed_message("Create New Container/Image from Project")
+
+    project_choice = Question("Select project to containerize:", existing_projects).ask()
+    project_data = load_existing_project(project_choice)
+
+    if not project_data:
+        status_message("Failed to load project data.", False)
+        return
+
+    project_folder = Path(project_data["selected_folder"])
+
+    container_options = [
+        "Create Docker Image",
+        "Create and Run Container",
+        "Build with Docker Compose",
+        "Back to Menu"
+    ]
+
+    container_choice = Question("What would you like to create?", container_options).ask()
+
+    if "Back" in container_choice:
+        return
+
+    # Check if Dockerfile exists
+    dockerfile_path = project_folder / "Dockerfile"
+    compose_path = project_folder / "docker-compose.yml"
+
+    if "Create Docker Image" in container_choice:
+        if not dockerfile_path.exists():
+            status_message("No Dockerfile found in project. Please add Docker support first.", False)
+            return
+
+        image_name = input(f"Enter image name (default: {project_choice.lower()}): ").strip()
+        if not image_name:
+            image_name = project_choice.lower()
+
+        image_tag = input("Enter image tag (default: latest): ").strip()
+        if not image_tag:
+            image_tag = "latest"
+
+        full_image_name = f"{image_name}:{image_tag}"
+
+        boxed_message(f"Building Docker image: {full_image_name}")
+        success, output, error = run_command_with_output(
+            f"docker build -t {full_image_name} {project_folder}"
+        )
+
+        if success:
+            arrow_message(f"Successfully built image: {full_image_name}")
+            print(output)
+        else:
+            status_message(f"Failed to build image: {error}", False)
+
+    elif "Create and Run Container" in container_choice:
+        if not dockerfile_path.exists():
+            status_message("No Dockerfile found in project. Please add Docker support first.", False)
+            return
+
+        container_name = input(f"Enter container name (default: {project_choice.lower()}-container): ").strip()
+        if not container_name:
+            container_name = f"{project_choice.lower()}-container"
+
+        port_mapping = input("Enter port mapping (e.g., 8080:3000, or press Enter to skip): ").strip()
+
+        # First build the image
+        image_name = f"{project_choice.lower()}:latest"
+        boxed_message(f"Building image: {image_name}")
+        success, output, error = run_command_with_output(
+            f"docker build -t {image_name} {project_folder}"
+        )
+
+        if not success:
+            status_message(f"Failed to build image: {error}", False)
+            return
+
+        # Then run the container
+        docker_run_cmd = f"docker run -d --name {container_name}"
+        if port_mapping:
+            docker_run_cmd += f" -p {port_mapping}"
+        docker_run_cmd += f" {image_name}"
+
+        boxed_message(f"Running container: {container_name}")
+        success, output, error = run_command_with_output(docker_run_cmd)
+
+        if success:
+            arrow_message(f"Successfully created and started container: {container_name}")
+            if port_mapping:
+                arrow_message(f"Access your application at: http://localhost:{port_mapping.split(':')[0]}")
+        else:
+            status_message(f"Failed to run container: {error}", False)
+
+    elif "Build with Docker Compose" in container_choice:
+        if not compose_path.exists():
+            status_message("No docker-compose.yml found in project. Please add Docker support first.", False)
+            return
+
+        compose_options = [
+            "Build and start services",
+            "Build only",
+            "Start in detached mode",
+            "View logs after start"
+        ]
+
+        compose_action = Question("Select Docker Compose action:", compose_options).ask()
+
+        cmd = ""
+
+        if "Build and start" in compose_action:
+            cmd = f"docker-compose -f {compose_path} up --build"
+        elif "Build only" in compose_action:
+            cmd = f"docker-compose -f {compose_path} build"
+        elif "Start in detached" in compose_action:
+            cmd = f"docker-compose -f {compose_path} up --build -d"
+        elif "View logs" in compose_action:
+            cmd = f"docker-compose -f {compose_path} up --build -d"
+
+        boxed_message(f"Running Docker Compose for {project_choice}")
+        success, output, error = run_command_with_output(cmd)
+
+        if success:
+            arrow_message("Docker Compose operation completed successfully")
+            print(output)
+
+            if "View logs" in compose_action:
+                input("\nPress Enter to view logs...")
+                subprocess.run(f"docker-compose -f {compose_path} logs", shell=True)
+        else:
+            status_message(f"Docker Compose failed: {error}", False)
+
+    input("\nPress Enter to continue...")
+
+# =============================================================================
+# KUBERNETES FUNCTIONS
+# =============================================================================
+
+def list_kubernetes_deployments(namespace: str = "all") -> List[Dict[str, Any]]:
+    """Get comprehensive list of all Kubernetes deployments."""
+    deployments = []
+    namespace_flag = "--all-namespaces" if namespace == "all" else f"-n {namespace}"
+
+    success, output, error = run_command_with_output(
+        f"kubectl get deployments {namespace_flag} -o json"
+    )
+
+    if not success:
+        return deployments
+
+    try:
+        data = json.loads(output)
+        for item in data.get('items', []):
+            metadata = item.get('metadata', {})
+            status = item.get('status', {})
+            spec = item.get('spec', {})
+
+            deployments.append({
+                'name': metadata.get('name', ''),
+                'namespace': metadata.get('namespace', ''),
+                'ready': f"{status.get('readyReplicas', 0)}/{spec.get('replicas', 0)}",
+                'up_to_date': status.get('updatedReplicas', 0),
+                'available': status.get('availableReplicas', 0),
+                'age': metadata.get('creationTimestamp', ''),
+                'containers': [c.get('name', '') for c in spec.get('template', {}).get('spec', {}).get('containers', [])]
+            })
+    except json.JSONDecodeError:
+        pass
+
+    return deployments
+
+def list_kubernetes_services(namespace: str = "all") -> List[Dict[str, Any]]:
+    """Get comprehensive list of all Kubernetes services."""
+    services = []
+    namespace_flag = "--all-namespaces" if namespace == "all" else f"-n {namespace}"
+
+    success, output, error = run_command_with_output(
+        f"kubectl get services {namespace_flag} -o json"
+    )
+
+    if not success:
+        return services
+
+    try:
+        data = json.loads(output)
+        for item in data.get('items', []):
+            metadata = item.get('metadata', {})
+            spec = item.get('spec', {})
+
+            services.append({
+                'name': metadata.get('name', ''),
+                'namespace': metadata.get('namespace', ''),
+                'type': spec.get('type', ''),
+                'cluster_ip': spec.get('clusterIP', ''),
+                'external_ip': spec.get('externalIP', 'None'),
+                'ports': spec.get('ports', []),
+                'age': metadata.get('creationTimestamp', ''),
+                'selector': spec.get('selector', {})
+            })
+    except json.JSONDecodeError:
+        pass
+
+    return services
+
+def list_kubernetes_namespaces() -> List[Dict[str, Any]]:
+    """Get list of all Kubernetes namespaces."""
+    namespaces = []
+
+    success, output, error = run_command_with_output("kubectl get namespaces -o json")
+
+    if not success:
+        return namespaces
+
+    try:
+        data = json.loads(output)
+        for item in data.get('items', []):
+            metadata = item.get('metadata', {})
+            status = item.get('status', {})
+
+            namespaces.append({
+                'name': metadata.get('name', ''),
+                'status': status.get('phase', ''),
+                'age': metadata.get('creationTimestamp', '')
+            })
+    except json.JSONDecodeError:
+        pass
+
+    return namespaces
+
+def display_kubernetes_deployments(deployments: List[Dict[str, Any]]):
+    """Display Kubernetes deployments in a formatted way."""
+    if not deployments:
+        status_message("No deployments found.", False)
+        return
+
+    boxed_message(f"Kubernetes Deployments ({len(deployments)} found)")
+    for i, deployment in enumerate(deployments, 1):
+        arrow_message(f"[{i}] {deployment['name']} ({deployment['namespace']})")
+        arrow_message(f"   Ready: {deployment['ready']}")
+        arrow_message(f"   Up-to-date: {deployment['up_to_date']}")
+        arrow_message(f"   Available: {deployment['available']}")
+        arrow_message(f"   Containers: {', '.join(deployment['containers'])}")
+        print()
+
+def display_kubernetes_services(services: List[Dict[str, Any]]):
+    """Display Kubernetes services in a formatted way."""
+    if not services:
+        status_message("No services found.", False)
+        return
+
+    boxed_message(f"Kubernetes Services ({len(services)} found)")
+    for i, service in enumerate(services, 1):
+        arrow_message(f"[{i}] {service['name']} ({service['namespace']})")
+        arrow_message(f"   Type: {service['type']}")
+        arrow_message(f"   Cluster IP: {service['cluster_ip']}")
+        if service['ports']:
+            ports_str = ', '.join([f"{p.get('port', 'N/A')}/{p.get('protocol', 'TCP')}" for p in service['ports']])
+            arrow_message(f"   Ports: {ports_str}")
+        print()
+
+def display_kubernetes_namespaces(namespaces: List[Dict[str, Any]]):
+    """Display Kubernetes namespaces in a formatted way."""
+    if not namespaces:
+        status_message("No namespaces found.", False)
+        return
+
+    boxed_message(f"Kubernetes Namespaces ({len(namespaces)} found)")
+    for i, ns in enumerate(namespaces, 1):
+        arrow_message(f"[{i}] {ns['name']} - Status: {ns['status']}")
+        print()
+
+def inspect_kubernetes_resource():
+    """Inspect Kubernetes resources with detailed information."""
+    while True:
+        resource_type = Question(
+            "What type of resource would you like to inspect?",
+            ["Pod", "Deployment", "Service", "Back to Menu"]
+        ).ask()
+
+        if "Back" in resource_type:
+            break
+
+        namespace = Question(
+            "Select namespace:",
+            ["All namespaces", "default", "kube-system", "Enter custom"]
+        ).ask()
+
+        if "All" in namespace:
+            ns = "all"
+        elif "Enter custom" in namespace:
+            ns = input("Enter namespace: ").strip() or "default"
+        else:
+            ns = namespace
+
+        if resource_type == "Pod":
+            pods = get_all_kubernetes_pods(ns)
+            if not pods:
+                status_message("No pods found.", False)
+                continue
+
+            pod_choices = [f"{p['name']} ({p['namespace']})" for p in pods]
+            pod_choice = Question("Select pod to inspect:", pod_choices).ask()
+            pod_name = pod_choice.split(" (")[0]
+            pod_namespace = pod_choice.split(" (")[1].rstrip(")")
+
+            success, output, error = run_command_with_output(f"kubectl describe pod {pod_name} -n {pod_namespace}")
+            if success:
+                boxed_message(f"Pod Description: {pod_name}")
+                print(output)
+            else:
+                status_message(f"Failed to inspect pod: {error}", False)
+
+        elif resource_type == "Deployment":
+            deployments = list_kubernetes_deployments(ns)
+            if not deployments:
+                status_message("No deployments found.", False)
+                continue
+
+            deployment_choices = [f"{d['name']} ({d['namespace']})" for d in deployments]
+            deployment_choice = Question("Select deployment to inspect:", deployment_choices).ask()
+            deployment_name = deployment_choice.split(" (")[0]
+            deployment_namespace = deployment_choice.split(" (")[1].rstrip(")")
+
+            success, output, error = run_command_with_output(f"kubectl describe deployment {deployment_name} -n {deployment_namespace}")
+            if success:
+                boxed_message(f"Deployment Description: {deployment_name}")
+                print(output)
+            else:
+                status_message(f"Failed to inspect deployment: {error}", False)
+
+        elif resource_type == "Service":
+            services = list_kubernetes_services(ns)
+            if not services:
+                status_message("No services found.", False)
+                continue
+
+            service_choices = [f"{s['name']} ({s['namespace']})" for s in services]
+            service_choice = Question("Select service to inspect:", service_choices).ask()
+            service_name = service_choice.split(" (")[0]
+            service_namespace = service_choice.split(" (")[1].rstrip(")")
+
+            success, output, error = run_command_with_output(f"kubectl describe service {service_name} -n {service_namespace}")
+            if success:
+                boxed_message(f"Service Description: {service_name}")
+                print(output)
+            else:
+                status_message(f"Failed to inspect service: {error}", False)
+
+        input("\nPress Enter to continue...")
+
+def kubernetes_pod_operations():
+    """Perform operations on Kubernetes pods (delete, restart, scale)."""
+    while True:
+        operation = Question(
+            "Select pod operation:",
+            ["Delete Pod", "Restart Pod", "Scale Deployment", "Back to Menu"]
+        ).ask()
+
+        if "Back" in operation:
+            break
+
+        namespace = Question(
+            "Select namespace:",
+            ["All namespaces", "default", "kube-system", "Enter custom"]
+        ).ask()
+
+        if "All" in namespace:
+            ns = "all"
+        elif "Enter custom" in namespace:
+            ns = input("Enter namespace: ").strip() or "default"
+        else:
+            ns = namespace
+
+        if "Delete Pod" in operation:
+            pods = get_all_kubernetes_pods(ns)
+            if not pods:
+                status_message("No pods found.", False)
+                continue
+
+            pod_choices = [f"{p['name']} ({p['namespace']})" for p in pods]
+            pod_choice = Question("Select pod to delete:", pod_choices).ask()
+            pod_name = pod_choice.split(" (")[0]
+            pod_namespace = pod_choice.split(" (")[1].rstrip(")")
+
+            confirm = Question(f"Are you sure you want to delete pod {pod_name}?", ["Yes", "No"]).ask()
+            if confirm == "Yes":
+                success, output, error = run_command_with_output(f"kubectl delete pod {pod_name} -n {pod_namespace}")
+                if success:
+                    arrow_message(f"Pod {pod_name} deleted successfully")
+                else:
+                    status_message(f"Failed to delete pod: {error}", False)
+
+        elif "Restart Pod" in operation:
+            deployments = list_kubernetes_deployments(ns)
+            if not deployments:
+                status_message("No deployments found.", False)
+                continue
+
+            deployment_choices = [f"{d['name']} ({d['namespace']})" for d in deployments]
+            deployment_choice = Question("Select deployment to restart:", deployment_choices).ask()
+            deployment_name = deployment_choice.split(" (")[0]
+            deployment_namespace = deployment_choice.split(" (")[1].rstrip(")")
+
+            success, output, error = run_command_with_output(f"kubectl rollout restart deployment {deployment_name} -n {deployment_namespace}")
+            if success:
+                arrow_message(f"Deployment {deployment_name} restarted successfully")
+            else:
+                status_message(f"Failed to restart deployment: {error}", False)
+
+        elif "Scale Deployment" in operation:
+            deployments = list_kubernetes_deployments(ns)
+            if not deployments:
+                status_message("No deployments found.", False)
+                continue
+
+            deployment_choices = [f"{d['name']} ({d['namespace']}) - Current: {d['ready']}" for d in deployments]
+            deployment_choice = Question("Select deployment to scale:", deployment_choices).ask()
+            deployment_name = deployment_choice.split(" (")[0]
+            deployment_namespace = deployment_choice.split(" (")[1].split(")")[0]
+
+            replicas = input("Enter number of replicas: ").strip()
+            if replicas.isdigit():
+                success, output, error = run_command_with_output(f"kubectl scale deployment {deployment_name} --replicas={replicas} -n {deployment_namespace}")
+                if success:
+                    arrow_message(f"Deployment {deployment_name} scaled to {replicas} replicas")
+                else:
+                    status_message(f"Failed to scale deployment: {error}", False)
+            else:
+                status_message("Invalid replica count.", False)
+
+        input("\nPress Enter to continue...")
+
+def execute_commands_in_pod():
+    """Execute commands inside Kubernetes pods."""
+    pods = get_all_kubernetes_pods("all")
+
+    # Filter for running pods
+    running_pods = [p for p in pods if p['status'] == 'Running']
+
+    if not running_pods:
+        status_message("No running pods found.", False)
+        return
+
+    pod_choices = [f"{p['name']} ({p['namespace']})" for p in running_pods]
+    pod_choice = Question("Select pod to execute command:", pod_choices).ask()
+    pod_name = pod_choice.split(" (")[0]
+    pod_namespace = pod_choice.split(" (")[1].rstrip(")")
+
+    # Get containers in the pod
+    pod_info = next(p for p in running_pods if p['name'] == pod_name)
+    containers = pod_info.get('containers', [])
+
+    container = containers[0] if len(containers) == 1 else Question(
+        "Select container:", containers
+    ).ask()
+
+    command_options = [
+        "/bin/bash",
+        "/bin/sh",
+        "ls -la",
+        "ps aux",
+        "env",
+        "Custom command"
+    ]
+
+    command_choice = Question("Select command to execute:", command_options).ask()
+
+    if "Custom" in command_choice:
+        custom_command = input("Enter command to execute: ").strip()
+        if not custom_command:
+            status_message("No command entered.", False)
+            return
+        command = custom_command
+    else:
+        command = command_choice
+
+    # Check if it's an interactive shell command
+    if command in ["/bin/bash", "/bin/sh"]:
+        boxed_message(f"Starting interactive shell in {pod_name}/{container}")
+        print("Type 'exit' to return to LaunchKit")
+        subprocess.run(f"kubectl exec -it {pod_name} -n {pod_namespace} -c {container} -- {command}", shell=True)
+    else:
+        success, output, error = run_command_with_output(f"kubectl exec {pod_name} -n {pod_namespace} -c {container} -- {command}")
+        if success:
+            boxed_message(f"Command Output from {pod_name}/{container}")
+            print(output)
+        else:
+            status_message(f"Command failed: {error}", False)
+
+    input("\nPress Enter to continue...")
+
+def port_forward_kubernetes():
+    """Set up port forwarding to Kubernetes pods or services."""
+    resource_type = Question(
+        "What would you like to port forward to?",
+        ["Pod", "Service", "Back to Menu"]
+    ).ask()
+
+    if "Back" in resource_type:
+        return
+
+    namespace = Question(
+        "Select namespace:",
+        ["All namespaces", "default", "kube-system", "Enter custom"]
+    ).ask()
+
+    if "All" in namespace:
+        ns = "all"
+    elif "Enter custom" in namespace:
+        ns = input("Enter namespace: ").strip() or "default"
+    else:
+        ns = namespace
+
+    if resource_type == "Pod":
+        pods = get_all_kubernetes_pods(ns)
+        running_pods = [p for p in pods if p['status'] == 'Running']
+
+        if not running_pods:
+            status_message("No running pods found.", False)
+            return
+
+        pod_choices = [f"{p['name']} ({p['namespace']})" for p in running_pods]
+        pod_choice = Question("Select pod:", pod_choices).ask()
+        pod_name = pod_choice.split(" (")[0]
+        pod_namespace = pod_choice.split(" (")[1].rstrip(")")
+
+        local_port = input("Enter local port: ").strip()
+        remote_port = input("Enter pod port: ").strip()
+
+        if local_port.isdigit() and remote_port.isdigit():
+            boxed_message(f"Port forwarding {local_port} -> {pod_name}:{remote_port}")
+            print("Press Ctrl+C to stop port forwarding")
+            subprocess.run(f"kubectl port-forward pod/{pod_name} -n {pod_namespace} {local_port}:{remote_port}", shell=True)
+        else:
+            status_message("Invalid port numbers.", False)
+
+    elif resource_type == "Service":
+        services = list_kubernetes_services(ns)
+        if not services:
+            status_message("No services found.", False)
+            return
+
+        service_choices = [f"{s['name']} ({s['namespace']})" for s in services]
+        service_choice = Question("Select service:", service_choices).ask()
+        service_name = service_choice.split(" (")[0]
+        service_namespace = service_choice.split(" (")[1].rstrip(")")
+
+        local_port = input("Enter local port: ").strip()
+        remote_port = input("Enter service port: ").strip()
+
+        if local_port.isdigit() and remote_port.isdigit():
+            boxed_message(f"Port forwarding {local_port} -> service/{service_name}:{remote_port}")
+            print("Press Ctrl+C to stop port forwarding")
+            subprocess.run(f"kubectl port-forward service/{service_name} -n {service_namespace} {local_port}:{remote_port}", shell=True)
+        else:
+            status_message("Invalid port numbers.", False)
+
+def apply_delete_kubernetes_manifests():
+    """Apply or delete Kubernetes manifests."""
+    action = Question(
+        "Select action:",
+        ["Apply manifest", "Delete manifest", "Back to Menu"]
+    ).ask()
+
+    if "Back" in action:
+        return
+
+    # Check for existing projects with Kubernetes configs
+    existing_projects = list_existing_projects()
+    project_manifests = []
+
+    for project in existing_projects:
+        project_data = load_existing_project(project)
+        if project_data:
+            project_folder = Path(project_data["selected_folder"])
+            k8s_folder = project_folder / "k8s"
+            if k8s_folder.exists():
+                project_manifests.append(project)
+
+    manifest_options = ["Browse for manifest file"]
+    if project_manifests:
+        manifest_options.extend([f"Project: {p}" for p in project_manifests])
+    manifest_options.append("Back to Menu")
+
+    manifest_choice = Question("Select manifest source:", manifest_options).ask()
+
+    if "Back" in manifest_choice:
+        return
+
+    if "Browse for" in manifest_choice:
+        manifest_path = input("Enter path to manifest file: ").strip()
+        if not Path(manifest_path).exists():
+            status_message("Manifest file not found.", False)
+            return
+    else:
+        project_name = manifest_choice.split(": ")[1]
+        project_data = load_existing_project(project_name)
+        project_folder = Path(project_data["selected_folder"])
+        k8s_folder = project_folder / "k8s"
+
+        # List available manifest files
+        manifest_files = list(k8s_folder.rglob("*.yaml")) + list(k8s_folder.rglob("*.yml"))
+        if not manifest_files:
+            status_message("No manifest files found in project.", False)
+            return
+
+        file_choices = [str(f.relative_to(project_folder)) for f in manifest_files]
+        file_choice = Question("Select manifest file:", file_choices).ask()
+        manifest_path = project_folder / file_choice
+
+    namespace = input("Enter namespace (or press Enter for default): ").strip() or "default"
+
+    if "Apply" in action:
+        success, output, error = run_command_with_output(f"kubectl apply -f {manifest_path} -n {namespace}")
+        if success:
+            arrow_message(f"Successfully applied manifest: {manifest_path}")
+            if output:
+                print(output)
+        else:
+            status_message(f"Failed to apply manifest: {error}", False)
+    else:  # Delete
+        confirm = Question(f"Are you sure you want to delete resources from {manifest_path}?", ["Yes", "No"]).ask()
+        if confirm == "Yes":
+            success, output, error = run_command_with_output(f"kubectl delete -f {manifest_path} -n {namespace}")
+            if success:
+                arrow_message(f"Successfully deleted resources from: {manifest_path}")
+                if output:
+                    print(output)
+            else:
+                status_message(f"Failed to delete resources: {error}", False)
+
+    input("\nPress Enter to continue...")
+
+def kubernetes_cluster_info():
+    """Display Kubernetes cluster information."""
+    boxed_message("Kubernetes Cluster Information")
+
+    # Cluster info
+    success, output, error = run_command_with_output("kubectl cluster-info")
+    if success:
+        arrow_message("Cluster Info:")
+        print(output)
+    else:
+        status_message(f"Failed to get cluster info: {error}", False)
+
+    print("\n" + "="*50)
+
+    # Node information
+    success, output, error = run_command_with_output("kubectl get nodes -o wide")
+    if success:
+        arrow_message("Cluster Nodes:")
+        print(output)
+    else:
+        status_message(f"Failed to get node info: {error}", False)
+
+    print("\n" + "="*50)
+
+    # Version info
+    success, output, error = run_command_with_output("kubectl version")
+    if success:
+        arrow_message("Version Information:")
+        print(output)
+    else:
+        status_message(f"Failed to get version info: {error}", False)
+
+    print("\n" + "="*50)
+
+    # Resource usage summary
+    success, output, error = run_command_with_output("kubectl top nodes")
+    if success:
+        arrow_message("Node Resource Usage:")
+        print(output)
+    else:
+        arrow_message("Resource metrics not available (metrics-server may not be installed)")
+
+    input("\nPress Enter to continue...")
+
+# =============================================================================
+# PROJECT SPECIFIC FUNCTIONS
+# =============================================================================
+
+def manage_project_images(data: dict):
+    """Manage Docker images for a specific project."""
+    project_name = data.get("project_name", "").lower()
+    project_folder = Path(data.get("selected_folder", ""))
+
+    # Check if project has Docker configuration
+    docker_info = read_docker_configuration(project_folder)
+    if not docker_info:
+        status_message("No Docker configuration found for this project.", False)
+        return
+
+    image_options = [
+        "View Project Images",
+        "Build Project Image",
+        "Push Image to Registry",
+        "Pull Image from Registry",
+        "Remove Project Images",
+        "Back to Menu"
+    ]
+
+    while True:
+        image_choice = Question("Select image management option:", image_options).ask()
+
+        if "Back" in image_choice:
+            break
+
+        if "View Project Images" in image_choice:
+            all_images = get_all_docker_images()
+            project_images = [
+                i for i in all_images
+                if project_name in i['repository'].lower()
+            ]
+
+            if project_images:
+                boxed_message(f"Images for project: {project_name}")
+                display_docker_images(project_images)
+            else:
+                status_message(f"No images found for project: {project_name}", False)
+
+        elif "Build Project Image" in image_choice:
+            dockerfile_path = project_folder / "Dockerfile"
+            if not dockerfile_path.exists():
+                status_message("No Dockerfile found. Please add Docker support first.", False)
+                continue
+
+            image_name = input(f"Enter image name (default: {project_name}): ").strip()
+            if not image_name:
+                image_name = project_name
+
+            image_tag = input("Enter image tag (default: latest): ").strip()
+            if not image_tag:
+                image_tag = "latest"
+
+            full_image_name = f"{image_name}:{image_tag}"
+
+            boxed_message(f"Building image: {full_image_name}")
+            success, output, error = run_command_with_output(
+                f"docker build -t {full_image_name} {project_folder}"
+            )
+
+            if success:
+                arrow_message(f"Successfully built image: {full_image_name}")
+                print(output)
+            else:
+                status_message(f"Failed to build image: {error}", False)
+
+        elif "Push Image to Registry" in image_choice:
+            all_images = get_all_docker_images()
+            project_images = [i for i in all_images if project_name in i['repository'].lower()]
+
+            if not project_images:
+                status_message("No project images found to push.", False)
+                continue
+
+            image_choices = [f"{i['repository']}:{i['tag']}" for i in project_images]
+            image_to_push = Question("Select image to push:", image_choices).ask()
+
+            registry = input("Enter registry URL (or press Enter for Docker Hub): ").strip()
+            if registry and not image_to_push.startswith(registry):
+                # Tag for registry
+                registry_image = f"{registry}/{image_to_push}"
+                success, _, _ = run_command_with_output(f"docker tag {image_to_push} {registry_image}")
+                if success:
+                    image_to_push = registry_image
+                else:
+                    status_message("Failed to tag image for registry.", False)
+                    continue
+
+            boxed_message(f"Pushing image: {image_to_push}")
+            success, output, error = run_command_with_output(f"docker push {image_to_push}")
+
+            if success:
+                arrow_message(f"Successfully pushed image: {image_to_push}")
+            else:
+                status_message(f"Failed to push image: {error}", False)
+
+        elif "Remove Project Images" in image_choice:
+            all_images = get_all_docker_images()
+            project_images = [i for i in all_images if project_name in i['repository'].lower()]
+
+            if not project_images:
+                status_message("No project images found to remove.", False)
+                continue
+
+            image_choices = [f"{i['repository']}:{i['tag']}" for i in project_images]
+            image_choices.append("Remove All Project Images")
+
+            image_choice = Question("Select image to remove:", image_choices).ask()
+
+            if "Remove All" in image_choice:
+                confirm = Question("Remove ALL project images?", ["Yes", "No"]).ask()
+                if confirm == "Yes":
+                    for image in project_images:
+                        image_name = f"{image['repository']}:{image['tag']}"
+                        success, _, error = run_command_with_output(f"docker rmi -f {image_name}")
+                        if success:
+                            arrow_message(f"Removed: {image_name}")
+                        else:
+                            status_message(f"Failed to remove {image_name}: {error}", False)
+            else:
+                success, _, error = run_command_with_output(f"docker rmi -f {image_choice}")
+                if success:
+                    arrow_message(f"Removed image: {image_choice}")
+                else:
+                    status_message(f"Failed to remove image: {error}", False)
+
+        input("\nPress Enter to continue...")
+
+def scale_project_containers(data: dict):
+    """Scale containers for a specific project."""
+    project_folder = Path(data.get("selected_folder", ""))
+
+    # Check for Docker Compose
+    compose_path = project_folder / "docker-compose.yml"
+
+    # Check for Kubernetes
+    k8s_folder = project_folder / "k8s"
+
+    scale_options = []
+    if compose_path.exists():
+        scale_options.append("Scale Docker Compose Services")
+    if k8s_folder.exists():
+        scale_options.append("Scale Kubernetes Deployments")
+    if not scale_options:
+        status_message("No scalable configurations found (Docker Compose or Kubernetes).", False)
+        return
+
+    scale_options.append("Back to Menu")
+
+    while True:
+        scale_choice = Question("Select scaling option:", scale_options).ask()
+
+        if "Back" in scale_choice:
+            break
+
+        if "Docker Compose" in scale_choice:
+            # Get services from docker-compose.yml
+            try:
+                with open(compose_path, 'r') as f:
+                    compose_content = yaml.safe_load(f)
+
+                services = list(compose_content.get('services', {}).keys())
+                if not services:
+                    status_message("No services found in docker-compose.yml", False)
+                    continue
+
+                service = Question("Select service to scale:", services).ask()
+                replicas = input("Enter number of replicas: ").strip()
+
+                if replicas.isdigit():
+                    success, output, error = run_command_with_output(
+                        f"docker-compose -f {compose_path} up --scale {service}={replicas} -d"
+                    )
+                    if success:
+                        arrow_message(f"Scaled {service} to {replicas} replicas")
+                    else:
+                        status_message(f"Failed to scale service: {error}", False)
+                else:
+                    status_message("Invalid replica count.", False)
+
+            except Exception as e:
+                status_message(f"Failed to read docker-compose.yml: {e}", False)
+
+        elif "Kubernetes" in scale_choice:
+            # Get deployments from k8s folder
+            deployment_files = list(k8s_folder.rglob("deployment.yaml")) + list(k8s_folder.rglob("deployment.yml"))
+
+            if not deployment_files:
+                status_message("No deployment files found in k8s folder.", False)
+                continue
+
+            # Extract deployment names
+            deployments = []
+            for deploy_file in deployment_files:
+                try:
+                    with open(deploy_file, 'r') as f:
+                        deploy_content = yaml.safe_load(f)
+                        if deploy_content and 'metadata' in deploy_content:
+                            deployments.append(deploy_content['metadata']['name'])
+                except Exception as e:
+                    print(f"Error occurred: {e}")
+                    continue
+
+            if not deployments:
+                status_message("No valid deployments found.", False)
+                continue
+
+            deployment = Question("Select deployment to scale:", deployments).ask()
+            replicas = input("Enter number of replicas: ").strip()
+            namespace = input("Enter namespace (default: default): ").strip() or "default"
+
+            if replicas.isdigit():
+                success, output, error = run_command_with_output(
+                    f"kubectl scale deployment {deployment} --replicas={replicas} -n {namespace}"
+                )
+                if success:
+                    arrow_message(f"Scaled deployment {deployment} to {replicas} replicas")
+                else:
+                    status_message(f"Failed to scale deployment: {error}", False)
+            else:
+                status_message("Invalid replica count.", False)
+
+        input("\nPress Enter to continue...")
+
+def update_project_containers(data: dict):
+    """Update containers for a specific project."""
+    project_name = data.get("project_name", "").lower()
+    project_folder = Path(data.get("selected_folder", ""))
+
+    update_options = [
+        "Rebuild and Update Images",
+        "Rolling Update (Kubernetes)",
+        "Recreate Containers (Docker Compose)",
+        "Update Environment Variables",
+        "Back to Menu"
+    ]
+
+    while True:
+        update_choice = Question("Select update option:", update_options).ask()
+
+        if "Back" in update_choice:
+            break
+
+        if "Rebuild and Update Images" in update_choice:
+            dockerfile_path = project_folder / "Dockerfile"
+            if not dockerfile_path.exists():
+                status_message("No Dockerfile found.", False)
+                continue
+
+            # Get existing images for this project
+            all_images = get_all_docker_images()
+            project_images = [i for i in all_images if project_name in i['repository'].lower()]
+
+            if not project_images:
+                image_name = f"{project_name}:latest"
+            else:
+                image_choices = [f"{i['repository']}:{i['tag']}" for i in project_images]
+                image_name = Question("Select image to rebuild:", image_choices).ask()
+
+            boxed_message(f"Rebuilding image: {image_name}")
+            success, output, error = run_command_with_output(
+                f"docker build -t {image_name} {project_folder}"
+            )
+
+            if success:
+                arrow_message(f"Successfully rebuilt image: {image_name}")
+
+                # Ask if user wants to update running containers
+                update_containers = Question("Update running containers with new image?", ["Yes", "No"]).ask()
+                if update_containers == "Yes":
+                    # Find running containers with this image
+                    containers = get_all_docker_containers(False)
+                    project_containers = [c for c in containers if project_name in c['name'].lower()]
+
+                    for container in project_containers:
+                        container_name = container['name']
+                        success, _, _ = run_command_with_output(f"docker stop {container_name}")
+                        success, _, _ = run_command_with_output(f"docker rm {container_name}")
+                        success, _, error = run_command_with_output(f"docker run -d --name {container_name} {image_name}")
+
+                        if success:
+                            arrow_message(f"Updated container: {container_name}")
+                        else:
+                            status_message(f"Failed to update container {container_name}: {error}", False)
+            else:
+                status_message(f"Failed to rebuild image: {error}", False)
+
+        elif "Rolling Update" in update_choice:
+            k8s_folder = project_folder / "k8s"
+            if not k8s_folder.exists():
+                status_message("No Kubernetes configuration found.", False)
+                continue
+
+            deployment_files = list(k8s_folder.rglob("deployment.yaml")) + list(k8s_folder.rglob("deployment.yml"))
+            if not deployment_files:
+                status_message("No deployment files found.", False)
+                continue
+
+            deployments = []
+            for deploy_file in deployment_files:
+                try:
+                    with open(deploy_file, 'r') as f:
+                        deploy_content = yaml.safe_load(f)
+                        if deploy_content and 'metadata' in deploy_content:
+                            deployments.append((deploy_content['metadata']['name'], deploy_content['metadata'].get('namespace', 'default')))
+                except Exception as e:
+                    print(f"Error occurred: {e}")
+                    continue
+
+            if not deployments:
+                status_message("No valid deployments found.", False)
+                continue
+
+            deployment_choices = [f"{name} ({namespace})" for name, namespace in deployments]
+            deployment_choice = Question("Select deployment to update:", deployment_choices).ask()
+
+            deployment_name = deployment_choice.split(" (")[0]
+            namespace = deployment_choice.split(" (")[1].rstrip(")")
+
+            update_type = Question(
+                "Select update type:",
+                ["Restart deployment", "Update image", "Apply new configuration"]
+            ).ask()
+
+            if "Restart" in update_type:
+                success, output, error = run_command_with_output(
+                    f"kubectl rollout restart deployment {deployment_name} -n {namespace}"
+                )
+                if success:
+                    arrow_message(f"Rolling restart initiated for {deployment_name}")
+                else:
+                    status_message(f"Failed to restart deployment: {error}", False)
+
+            elif "Update image" in update_type:
+                new_image = input("Enter new image name: ").strip()
+                if new_image:
+                    success, output, error = run_command_with_output(
+                        f"kubectl set image deployment/{deployment_name} {deployment_name}={new_image} -n {namespace}"
+                    )
+                    if success:
+                        arrow_message(f"Image updated for deployment {deployment_name}")
+                    else:
+                        status_message(f"Failed to update image: {error}", False)
+
+            elif "Apply new configuration" in update_type:
+                # Find the deployment file and apply it
+                deploy_file = next((f for f in deployment_files if deployment_name in str(f)), None)
+                if deploy_file:
+                    success, output, error = run_command_with_output(f"kubectl apply -f {deploy_file}")
+                    if success:
+                        arrow_message(f"Configuration applied for deployment {deployment_name}")
+                    else:
+                        status_message(f"Failed to apply configuration: {error}", False)
+
+        elif "Recreate Containers" in update_choice:
+            compose_path = project_folder / "docker-compose.yml"
+            if not compose_path.exists():
+                status_message("No docker-compose.yml found.", False)
+                continue
+
+            recreate_type = Question(
+                "Select recreate option:",
+                ["Recreate all services", "Recreate specific service", "Force recreate"]
+            ).ask()
+
+            if "all services" in recreate_type:
+                cmd = f"docker-compose -f {compose_path} up --force-recreate -d"
+            elif "specific service" in recreate_type:
+                try:
+                    with open(compose_path, 'r') as f:
+                        compose_content = yaml.safe_load(f)
+                    services = list(compose_content.get('services', {}).keys())
+                    service = Question("Select service to recreate:", services).ask()
+                    cmd = f"docker-compose -f {compose_path} up --force-recreate -d {service}"
+                except Exception as e:
+                    print(f"Error occurred: {e}")
+                    status_message("Failed to read docker-compose.yml", False)
+                    continue
+            else:  # Force recreate
+                cmd = f"docker-compose -f {compose_path} down && docker-compose -f {compose_path} up --build -d"
+
+            boxed_message("Recreating containers...")
+            success, output, error = run_command_with_output(cmd)
+
+            if success:
+                arrow_message("Containers recreated successfully")
+                if output:
+                    print(output)
+            else:
+                status_message(f"Failed to recreate containers: {error}", False)
+
+        input("\nPress Enter to continue...")
+
+def clean_project_resources(data: dict):
+    """Clean up Docker/Kubernetes resources for a specific project."""
+    project_name = data.get("project_name", "").lower()
+    project_folder = Path(data.get("selected_folder", ""))
+
+    clean_options = [
+        "Stop and Remove Project Containers",
+        "Remove Project Images",
+        "Clean Project Volumes",
+        "Remove Kubernetes Resources",
+        "Clean All Project Resources",
+        "Back to Menu"
+    ]
+
+    while True:
+        clean_choice = Question("Select cleanup option:", clean_options).ask()
+
+        if "Back" in clean_choice:
+            break
+
+        if "Stop and Remove Project Containers" in clean_choice:
+            containers = get_all_docker_containers(True)
+            project_containers = [c for c in containers if project_name in c['name'].lower()]
+
+            if not project_containers:
+                status_message("No project containers found.", False)
+                continue
+
+            boxed_message(f"Found {len(project_containers)} project containers")
+            for container in project_containers:
+                arrow_message(f"- {container['name']} ({container['status']})")
+
+            confirm = Question("Remove these containers?", ["Yes", "No"]).ask()
+            if confirm == "Yes":
+                for container in project_containers:
+                    container_name = container['name']
+                    # Stop container first
+                    run_command_with_output(f"docker stop {container_name}")
+                    # Remove container
+                    success, _, error = run_command_with_output(f"docker rm -f {container_name}")
+                    if success:
+                        arrow_message(f"Removed: {container_name}")
+                    else:
+                        status_message(f"Failed to remove {container_name}: {error}", False)
+
+        elif "Remove Project Images" in clean_choice:
+            images = get_all_docker_images()
+            project_images = [i for i in images if project_name in i['repository'].lower()]
+
+            if not project_images:
+                status_message("No project images found.", False)
+                continue
+
+            boxed_message(f"Found {len(project_images)} project images")
+            for image in project_images:
+                arrow_message(f"- {image['repository']}:{image['tag']}")
+
+            confirm = Question("Remove these images?", ["Yes", "No"]).ask()
+            if confirm == "Yes":
+                for image in project_images:
+                    image_name = f"{image['repository']}:{image['tag']}"
+                    success, _, error = run_command_with_output(f"docker rmi -f {image_name}")
+                    if success:
+                        arrow_message(f"Removed: {image_name}")
+                    else:
+                        status_message(f"Failed to remove {image_name}: {error}", False)
+
+        elif "Clean Project Volumes" in clean_choice:
+            # List volumes and filter by project name
+            success, output, error = run_command_with_output("docker volume ls --format '{{.Name}}'")
+            if success and output:
+                volumes = output.strip().split('\n')
+                project_volumes = [v for v in volumes if project_name in v.lower()]
+
+                if project_volumes:
+                    boxed_message(f"Found {len(project_volumes)} project volumes")
+                    for volume in project_volumes:
+                        arrow_message(f"- {volume}")
+
+                    confirm = Question("Remove these volumes?", ["Yes", "No"]).ask()
+                    if confirm == "Yes":
+                        for volume in project_volumes:
+                            success, _, error = run_command_with_output(f"docker volume rm -f {volume}")
+                            if success:
+                                arrow_message(f"Removed: {volume}")
+                            else:
+                                status_message(f"Failed to remove {volume}: {error}", False)
+                else:
+                    status_message("No project volumes found.", False)
+            else:
+                status_message("Failed to list volumes.", False)
+
+        elif "Remove Kubernetes Resources" in clean_choice:
+            k8s_folder = project_folder / "k8s"
+            if not k8s_folder.exists():
+                status_message("No Kubernetes configuration found.", False)
+                continue
+
+            # Get namespace from deployment if available
+            deployment_files = list(k8s_folder.rglob("deployment.yaml")) + list(k8s_folder.rglob("deployment.yml"))
+            namespace = "default"
+
+            if deployment_files:
+                try:
+                    with open(deployment_files[0], 'r') as f:
+                        deploy_content = yaml.safe_load(f)
+                        namespace = deploy_content.get('metadata', {}).get('namespace', 'default')
+                except Exception as e:
+                    print(f"Error occurred: {e}")
+                    pass
+
+            # Check what resources exist
+            k8s_status = check_kubernetes_resources(project_name, namespace)
+
+            if not any([k8s_status['deployments'], k8s_status['services'], k8s_status['pods']]):
+                status_message("No Kubernetes resources found for this project.", False)
+                continue
+
+            boxed_message("Found Kubernetes resources:")
+            if k8s_status['deployments']:
+                arrow_message(f"Deployments: {', '.join(k8s_status['deployments'])}")
+            if k8s_status['services']:
+                arrow_message(f"Services: {', '.join(k8s_status['services'])}")
+            if k8s_status['pods']:
+                arrow_message(f"Pods: {', '.join(k8s_status['pods'])}")
+
+            confirm = Question("Remove these Kubernetes resources?", ["Yes", "No"]).ask()
+            if confirm == "Yes":
+                # Delete using manifest files if available
+                manifest_files = list(k8s_folder.rglob("*.yaml")) + list(k8s_folder.rglob("*.yml"))
+                if manifest_files:
+                    for manifest in manifest_files:
+                        success, _, error = run_command_with_output(f"kubectl delete -f {manifest} --ignore-not-found=true")
+                        if success:
+                            arrow_message(f"Deleted resources from: {manifest.name}")
+                        else:
+                            status_message(f"Failed to delete from {manifest.name}: {error}", False)
+                else:
+                    # Delete individual resources
+                    for deployment in k8s_status['deployments']:
+                        run_command_with_output(f"kubectl delete {deployment} -n {namespace}")
+                    for service in k8s_status['services']:
+                        run_command_with_output(f"kubectl delete {service} -n {namespace}")
+
+        elif "Clean All Project Resources" in clean_choice:
+            confirm = Question("Remove ALL project resources (containers, images, volumes, K8s)?", ["Yes", "No"]).ask()
+            if confirm == "Yes":
+                boxed_message(f"Cleaning all resources for project: {project_name}")
+
+                # Stop and remove containers
+                containers = get_all_docker_containers(True)
+                project_containers = [c for c in containers if project_name in c['name'].lower()]
+                for container in project_containers:
+                    container_name = container['name']
+                    run_command_with_output(f"docker stop {container_name}")
+                    run_command_with_output(f"docker rm -f {container_name}")
+                    arrow_message(f"Removed container: {container_name}")
+
+                # Remove images
+                images = get_all_docker_images()
+                project_images = [i for i in images if project_name in i['repository'].lower()]
+                for image in project_images:
+                    image_name = f"{image['repository']}:{image['tag']}"
+                    run_command_with_output(f"docker rmi -f {image_name}")
+                    arrow_message(f"Removed image: {image_name}")
+
+                # Clean volumes
+                success, output, _ = run_command_with_output("docker volume ls --format '{{.Name}}'")
+                if success and output:
+                    volumes = output.strip().split('\n')
+                    project_volumes = [v for v in volumes if project_name in v.lower()]
+                    for volume in project_volumes:
+                        run_command_with_output(f"docker volume rm -f {volume}")
+                        arrow_message(f"Removed volume: {volume}")
+
+                # Clean Kubernetes resources
+                k8s_folder = project_folder / "k8s"
+                if k8s_folder.exists():
+                    manifest_files = list(k8s_folder.rglob("*.yaml")) + list(k8s_folder.rglob("*.yml"))
+                    for manifest in manifest_files:
+                        run_command_with_output(f"kubectl delete -f {manifest} --ignore-not-found=true")
+                        arrow_message(f"Cleaned K8s resources from: {manifest.name}")
+
+                arrow_message("Project cleanup completed!")
+
+        input("\nPress Enter to continue...")
+
+def deploy_redeploy_project(data: dict):
+    """Deploy or redeploy project using Docker/Kubernetes."""
+    project_name = data.get("project_name", "").lower()
+    project_folder = Path(data.get("selected_folder", ""))
+
+    # Check available deployment options
+    dockerfile_path = project_folder / "Dockerfile"
+    compose_path = project_folder / "docker-compose.yml"
+    k8s_folder = project_folder / "k8s"
+
+    deploy_options = []
+    if dockerfile_path.exists():
+        deploy_options.append("Deploy with Docker")
+    if compose_path.exists():
+        deploy_options.append("Deploy with Docker Compose")
+    if k8s_folder.exists():
+        deploy_options.append("Deploy to Kubernetes")
+
+    if not deploy_options:
+        status_message("No deployment configurations found. Please add Docker or Kubernetes support first.", False)
+        return
+
+    deploy_options.append("Back to Menu")
+
+    while True:
+        deploy_choice = Question("Select deployment option:", deploy_options).ask()
+
+        if "Back" in deploy_choice:
+            break
+
+        if "Deploy with Docker" in deploy_choice and "Compose" not in deploy_choice:
+            # Simple Docker deployment
+            image_name = f"{project_name}:latest"
+            container_name = f"{project_name}-container"
+
+            # Build image
+            boxed_message("Building Docker image...")
+            success, output, error = run_command_with_output(
+                f"docker build -t {image_name} {project_folder}"
+            )
+
+            if not success:
+                status_message(f"Failed to build image: {error}", False)
+                continue
+
+            arrow_message(f"Successfully built image: {image_name}")
+
+            # Stop and remove existing container if it exists
+            run_command_with_output(f"docker stop {container_name}")
+            run_command_with_output(f"docker rm {container_name}")
+
+            # Get port configuration
+            port_mapping = input("Enter port mapping (e.g., 8080:3000, or press Enter to skip): ").strip()
+
+            # Run new container
+            docker_run_cmd = f"docker run -d --name {container_name}"
+            if port_mapping:
+                docker_run_cmd += f" -p {port_mapping}"
+            docker_run_cmd += f" {image_name}"
+
+            success, output, error = run_command_with_output(docker_run_cmd)
+
+            if success:
+                arrow_message(f"Successfully deployed container: {container_name}")
+                if port_mapping:
+                    local_port = port_mapping.split(':')[0]
+                    arrow_message(f"Access your application at: http://localhost:{local_port}")
+            else:
+                status_message(f"Failed to deploy container: {error}", False)
+
+        elif "Deploy with Docker Compose" in deploy_choice:
+            # Docker Compose deployment
+            deploy_type = Question(
+                "Select deployment type:",
+                ["Fresh deployment (rebuild)", "Quick deployment", "Production deployment"]
+            ).ask()
+
+            if "Fresh" in deploy_type:
+                cmd = f"docker-compose -f {compose_path} down && docker-compose -f {compose_path} up --build -d"
+            elif "Quick" in deploy_type:
+                cmd = f"docker-compose -f {compose_path} up -d"
+            else:  # Production
+                prod_compose = project_folder / "docker-compose.prod.yml"
+                if prod_compose.exists():
+                    cmd = f"docker-compose -f {compose_path} -f {prod_compose} up --build -d"
+                else:
+                    cmd = f"docker-compose -f {compose_path} up --build -d"
+
+            boxed_message("Deploying with Docker Compose...")
+            success, output, error = run_command_with_output(cmd)
+
+            if success:
+                arrow_message("Docker Compose deployment completed successfully!")
+                print(output)
+
+                # Show service status
+                success, output, _ = run_command_with_output(f"docker-compose -f {compose_path} ps")
+                if success:
+                    boxed_message("Service Status:")
+                    print(output)
+            else:
+                status_message(f"Docker Compose deployment failed: {error}", False)
+
+        elif "Deploy to Kubernetes" in deploy_choice:
+            # Kubernetes deployment
+            deploy_type = Question(
+                "Select Kubernetes deployment type:",
+                ["Apply all manifests", "Rolling update", "Deploy specific resource"]
+            ).ask()
+
+            namespace = input("Enter namespace (default: default): ").strip() or "default"
+
+            if "Apply all" in deploy_type:
+                # Apply all manifest files
+                manifest_files = list(k8s_folder.rglob("*.yaml")) + list(k8s_folder.rglob("*.yml"))
+
+                if not manifest_files:
+                    status_message("No manifest files found in k8s folder.", False)
+                    continue
+
+                boxed_message("Deploying to Kubernetes...")
+
+                for manifest in manifest_files:
+                    success, output, error = run_command_with_output(f"kubectl apply -f {manifest} -n {namespace}")
+                    if success:
+                        arrow_message(f"Applied: {manifest.name}")
+                    else:
+                        status_message(f"Failed to apply {manifest.name}: {error}", False)
+
+                # Show deployment status
+                success, output, _ = run_command_with_output(f"kubectl get all -n {namespace}")
+                if success:
+                    boxed_message("Deployment Status:")
+                    print(output)
+
+            elif "Rolling update" in deploy_type:
+                # Get deployments and perform rolling update
+                deployment_files = list(k8s_folder.rglob("deployment.yaml")) + list(k8s_folder.rglob("deployment.yml"))
+
+                for deploy_file in deployment_files:
+                    try:
+                        with open(deploy_file, 'r') as f:
+                            deploy_content = yaml.safe_load(f)
+                            deployment_name = deploy_content['metadata']['name']
+
+                        # Apply updated deployment
+                        success, _, error = run_command_with_output(f"kubectl apply -f {deploy_file} -n {namespace}")
+                        if success:
+                            arrow_message(f"Applied deployment: {deployment_name}")
+
+                            # Trigger rolling update
+                            success, _, _ = run_command_with_output(f"kubectl rollout restart deployment {deployment_name} -n {namespace}")
+                            if success:
+                                arrow_message(f"Rolling update initiated for: {deployment_name}")
+                        else:
+                            status_message(f"Failed to apply deployment: {error}", False)
+
+                    except Exception as e:
+                        status_message(f"Failed to process {deploy_file.name}: {e}", False)
+
+            else:  # Deploy specific resource
+                manifest_files = list(k8s_folder.rglob("*.yaml")) + list(k8s_folder.rglob("*.yml"))
+                file_choices = [f.name for f in manifest_files]
+
+                selected_file = Question("Select manifest to deploy:", file_choices).ask()
+                manifest_path = next(f for f in manifest_files if f.name == selected_file)
+
+                success, output, error = run_command_with_output(f"kubectl apply -f {manifest_path} -n {namespace}")
+                if success:
+                    arrow_message(f"Successfully applied: {selected_file}")
+                    print(output)
+                else:
+                    status_message(f"Failed to apply manifest: {error}", False)
+
+        input("\nPress Enter to continue...")
+
+
+
+
+# =============================================================================
+# UPDATED FUNCTION IMPLEMENTATIONS
+# =============================================================================
+
+def global_docker_management():
+    """Handle global Docker management operations with complete implementations."""
+    while True:
+        action = Question("Select Docker operation:", global_docker_actions).ask()
+
+        if "Back" in action:
+            break
+
+        elif "List All Docker Containers" in action:
+            include_stopped = Question(
+                "Include stopped containers?",
+                ["Yes", "No"]
+            ).ask() == "Yes"
+            containers = get_all_docker_containers(include_stopped)
+            display_docker_containers(containers)
+
+        elif "List All Docker Images" in action:
+            images = get_all_docker_images()
+            display_docker_images(images)
+
+        elif "Inspect Container/Image" in action:
+            inspect_docker_resource()
+
+        elif "Container Operations (Start/Stop/Restart)" in action:
+            containers = get_all_docker_containers(True)
+            if not containers:
+                status_message("No containers found.", False)
+                continue
+
+            container_choices = [f"{c['name']} ({c['status']})" for c in containers]
+            container_choice = Question("Select container:", container_choices).ask()
+            container_name = container_choice.split(" (")[0]
+
+            operations = ["Start", "Stop", "Restart", "Pause", "Unpause"]
+            operation = Question("Select operation:", operations).ask()
+
+            success, output, error = run_command_with_output(
+                f"docker {operation.lower()} {container_name}"
+            )
+
+            if success:
+                arrow_message(f"Successfully {operation.lower()}ed {container_name}")
+            else:
+                status_message(f"Failed to {operation.lower()} {container_name}: {error}", False)
+
+        elif "Remove Container/Image" in action:
+            remove_docker_resource()
+
+        elif "Docker System Information" in action:
+            docker_system_info()
+
+        elif "Clean Docker Resources" in action:
+            clean_docker_resources()
+
+        elif "View Container Logs" in action:
+            containers = get_all_docker_containers(True)
+            if not containers:
+                status_message("No containers found.", False)
+                continue
+
+            container_choices = [c['name'] for c in containers]
+            container_name = Question("Select container for logs:", container_choices).ask()
+
+            log_options = ["Last 50 lines", "Last 100 lines", "Follow logs", "All logs"]
+            log_option = Question("Select log option:", log_options).ask()
+
+            if "50 lines" in log_option:
+                cmd = f"docker logs --tail 50 {container_name}"
+            elif "100 lines" in log_option:
+                cmd = f"docker logs --tail 100 {container_name}"
+            elif "Follow" in log_option:
+                cmd = f"docker logs -f {container_name}"
+            else:
+                cmd = f"docker logs {container_name}"
+
+            boxed_message(f"Logs for {container_name}")
+
+            # For follow logs, don't capture output
+            if "Follow" in log_option:
+                subprocess.run(cmd, shell=True)
+            else:
+                success, output, error = run_command_with_output(cmd)
+                if success:
+                    print(output)
+                else:
+                    status_message(f"Failed to get logs: {error}", False)
+
+        elif "Execute Commands in Container" in action:
+            execute_commands_in_container()
+
+        elif "Create New Container" in action:
+            create_new_container_from_projects()
+
+        input("\nPress Enter to continue...")
+
+def global_kubernetes_management():
+    """Handle global Kubernetes management operations with complete implementations."""
+    while True:
+        action = Question("Select Kubernetes operation:", global_kubernetes_actions).ask()
+
+        if "Back" in action:
+            break
+
+        elif "List All Pods" in action:
+            namespace = Question(
+                "Select namespace:",
+                ["All namespaces", "default", "kube-system", "Enter custom"]
+            ).ask()
+
+            if "All" in namespace:
+                ns = "all"
+            elif "Enter custom" in namespace:
+                ns = input("Enter namespace: ").strip() or "default"
+            else:
+                ns = namespace
+
+            pods = get_all_kubernetes_pods(ns)
+            display_kubernetes_pods(pods)
+
+        elif "List All Deployments" in action:
+            namespace = Question(
+                "Select namespace:",
+                ["All namespaces", "default", "kube-system", "Enter custom"]
+            ).ask()
+
+            if "All" in namespace:
+                ns = "all"
+            elif "Enter custom" in namespace:
+                ns = input("Enter namespace: ").strip() or "default"
+            else:
+                ns = namespace
+
+            deployments = list_kubernetes_deployments(ns)
+            display_kubernetes_deployments(deployments)
+
+        elif "List All Services" in action:
+            namespace = Question(
+                "Select namespace:",
+                ["All namespaces", "default", "kube-system", "Enter custom"]
+            ).ask()
+
+            if "All" in namespace:
+                ns = "all"
+            elif "Enter custom" in namespace:
+                ns = input("Enter namespace: ").strip() or "default"
+            else:
+                ns = namespace
+
+            services = list_kubernetes_services(ns)
+            display_kubernetes_services(services)
+
+        elif "List All Namespaces" in action:
+            namespaces = list_kubernetes_namespaces()
+            display_kubernetes_namespaces(namespaces)
+
+        elif "Inspect Resource (Pod/Deployment/Service)" in action:
+            inspect_kubernetes_resource()
+
+        elif "Pod Operations (Delete/Restart/Scale)" in action:
+            kubernetes_pod_operations()
+
+        elif "View Pod Logs" in action:
+            pods = get_all_kubernetes_pods("all")
+            if not pods:
+                status_message("No pods found.", False)
+                continue
+
+            pod_choices = [f"{p['name']} ({p['namespace']})" for p in pods]
+            pod_choice = Question("Select pod for logs:", pod_choices).ask()
+            pod_name = pod_choice.split(" (")[0]
+            namespace = pod_choice.split(" (")[1].rstrip(")")
+
+            log_options = ["Last 50 lines", "Last 100 lines", "Follow logs", "All logs"]
+            log_option = Question("Select log option:", log_options).ask()
+
+            if "50 lines" in log_option:
+                cmd = f"kubectl logs --tail=50 {pod_name} -n {namespace}"
+            elif "100 lines" in log_option:
+                cmd = f"kubectl logs --tail=100 {pod_name} -n {namespace}"
+            elif "Follow" in log_option:
+                cmd = f"kubectl logs -f {pod_name} -n {namespace}"
+            else:
+                cmd = f"kubectl logs {pod_name} -n {namespace}"
+
+            boxed_message(f"Logs for {pod_name} in {namespace}")
+
+            # For follow logs, don't capture output
+            if "Follow" in log_option:
+                subprocess.run(cmd, shell=True)
+            else:
+                success, output, error = run_command_with_output(cmd)
+                if success:
+                    print(output)
+                else:
+                    status_message(f"Failed to get logs: {error}", False)
+
+        elif "Execute Commands in Pod" in action:
+            execute_commands_in_pod()
+
+        elif "Port Forward to Pod/Service" in action:
+            port_forward_kubernetes()
+
+        elif "Apply/Delete Kubernetes Manifests" in action:
+            apply_delete_kubernetes_manifests()
+
+        elif "Kubernetes Cluster Information" in action:
+            kubernetes_cluster_info()
+
+        input("\nPress Enter to continue...")
+
+def project_specific_container_management(data: dict):
+    """Handle project-specific container management with complete implementations."""
+    project_name = data.get("project_name", "").lower()
+
+    while True:
+        action = Question("Select project container operation:", project_container_actions).ask()
+
+        if "Back" in action:
+            break
+
+        elif "View Project Containers" in action:
+            # Find containers related to this project
+            all_containers = get_all_docker_containers(True)
+            project_containers = [
+                c for c in all_containers
+                if project_name in c['name'].lower() or
+                project_name in c['image'].lower()
+            ]
+
+            if project_containers:
+                boxed_message(f"Containers for project: {project_name}")
+                display_docker_containers(project_containers)
+            else:
+                status_message(f"No containers found for project: {project_name}", False)
+
+        elif "Manage Project Images" in action:
+            manage_project_images(data)
+
+        elif "Container Logs for Project" in action:
+            all_containers = get_all_docker_containers(True)
+            project_containers = [
+                c for c in all_containers
+                if project_name in c['name'].lower() or
+                project_name in c['image'].lower()
+            ]
+
+            if not project_containers:
+                status_message(f"No containers found for project: {project_name}", False)
+                continue
+
+            container_choices = [c['name'] for c in project_containers]
+            container_name = Question("Select container for logs:", container_choices).ask()
+
+            success, output, error = run_command_with_output(f"docker logs --tail 100 {container_name}")
+
+            if success:
+                boxed_message(f"Recent logs for {container_name}")
+                print(output)
+            else:
+                status_message(f"Failed to get logs: {error}", False)
+
+        elif "Scale Project Containers" in action:
+            scale_project_containers(data)
+
+        elif "Update Project Containers" in action:
+            update_project_containers(data)
+
+        elif "Clean Project Resources" in action:
+            clean_project_resources(data)
+
+        elif "Deploy/Redeploy Project" in action:
+            deploy_redeploy_project(data)
+
+        input("\nPress Enter to continue...")
+
+
+# Continue with all the remaining original functions...
 def read_docker_configuration(project_folder: Path):
     """Read and analyze existing Docker configuration files."""
     docker_info = {}
@@ -497,6 +2570,154 @@ def read_kubernetes_configuration(project_folder: Path):
         k8s_info['has_makefile'] = True
 
     return k8s_info
+
+
+def get_all_docker_containers(include_stopped: bool = True) -> List[Dict[str, Any]]:
+    """Get comprehensive list of all Docker containers."""
+    containers = []
+
+    # Get running containers
+    flag = "--all" if include_stopped else ""
+    success, output, error = run_command_with_output(
+        f"docker ps {flag} --format 'json'"
+    )
+
+    if not success:
+        return containers
+
+    for line in output.strip().split('\n'):
+        if line.strip():
+            try:
+                container_data = json.loads(line)
+                containers.append({
+                    'id': container_data.get('ID', ''),
+                    'name': container_data.get('Names', ''),
+                    'image': container_data.get('Image', ''),
+                    'status': container_data.get('Status', ''),
+                    'ports': container_data.get('Ports', ''),
+                    'created': container_data.get('CreatedAt', ''),
+                    'command': container_data.get('Command', ''),
+                    'size': container_data.get('Size', ''),
+                    'state': container_data.get('State', '')
+                })
+            except json.JSONDecodeError:
+                continue
+
+    return containers
+
+
+def get_all_docker_images() -> List[Dict[str, Any]]:
+    """Get comprehensive list of all Docker images."""
+    images = []
+
+    success, output, error = run_command_with_output(
+        "docker images --format 'json'"
+    )
+
+    if not success:
+        return images
+
+    for line in output.strip().split('\n'):
+        if line.strip():
+            try:
+                image_data = json.loads(line)
+                images.append({
+                    'id': image_data.get('ID', ''),
+                    'repository': image_data.get('Repository', ''),
+                    'tag': image_data.get('Tag', ''),
+                    'created': image_data.get('CreatedAt', ''),
+                    'size': image_data.get('Size', '')
+                })
+            except json.JSONDecodeError:
+                continue
+
+    return images
+
+
+def get_all_kubernetes_pods(namespace: str = "all") -> List[Dict[str, Any]]:
+    """Get comprehensive list of all Kubernetes pods."""
+    pods = []
+
+    namespace_flag = "--all-namespaces" if namespace == "all" else f"-n {namespace}"
+    success, output, error = run_command_with_output(
+        f"kubectl get pods {namespace_flag} -o json"
+    )
+
+    if not success:
+        return pods
+
+    try:
+        data = json.loads(output)
+        for item in data.get('items', []):
+            metadata = item.get('metadata', {})
+            status = item.get('status', {})
+            spec = item.get('spec', {})
+
+            pods.append({
+                'name': metadata.get('name', ''),
+                'namespace': metadata.get('namespace', ''),
+                'status': status.get('phase', ''),
+                'ready': f"{len([c for c in status.get('containerStatuses', []) if c.get('ready', False)])}/{len(spec.get('containers', []))}",
+                'restarts': sum(c.get('restartCount', 0) for c in status.get('containerStatuses', [])),
+                'age': metadata.get('creationTimestamp', ''),
+                'node': spec.get('nodeName', ''),
+                'containers': [c.get('name', '') for c in spec.get('containers', [])]
+            })
+    except json.JSONDecodeError:
+        pass
+
+    return pods
+
+
+def display_docker_containers(containers: List[Dict[str, Any]]):
+    """Display Docker containers in a formatted way."""
+    if not containers:
+        status_message("No Docker containers found.", False)
+        return
+
+    boxed_message(f"Docker Containers ({len(containers)} found)")
+
+    for i, container in enumerate(containers, 1):
+        arrow_message(f"[{i}] {container['name']}")
+        arrow_message(f"    Image: {container['image']}")
+        arrow_message(f"    Status: {container['status']}")
+        arrow_message(f"    Ports: {container['ports'] or 'None'}")
+        arrow_message(f"    ID: {container['id'][:12]}")
+        print()  # Add spacing
+
+
+def display_docker_images(images: List[Dict[str, Any]]):
+    """Display Docker images in a formatted way."""
+    if not images:
+        status_message("No Docker images found.", False)
+        return
+
+    boxed_message(f"Docker Images ({len(images)} found)")
+
+    for i, image in enumerate(images, 1):
+        arrow_message(f"[{i}] {image['repository']}:{image['tag']}")
+        arrow_message(f"    Size: {image['size']}")
+        arrow_message(f"    Created: {image['created']}")
+        arrow_message(f"    ID: {image['id'][:12]}")
+        print()  # Add spacing
+
+
+def display_kubernetes_pods(pods: List[Dict[str, Any]]):
+    """Display Kubernetes pods in a formatted way."""
+    if not pods:
+        status_message("No Kubernetes pods found.", False)
+        return
+
+    boxed_message(f"Kubernetes Pods ({len(pods)} found)")
+
+    for i, pod in enumerate(pods, 1):
+        arrow_message(f"[{i}] {pod['name']} ({pod['namespace']})")
+        arrow_message(f"    Status: {pod['status']}")
+        arrow_message(f"    Ready: {pod['ready']}")
+        arrow_message(f"    Restarts: {pod['restarts']}")
+        arrow_message(f"    Node: {pod['node']}")
+        arrow_message(f"    Containers: {', '.join(pod['containers'])}")
+        print()  # Add spacing
 
 
 def update_dockerfile(dockerfile_path: Path, config_type: str, new_value: str):
@@ -1486,98 +3707,79 @@ def edit_kubernetes_configuration(project_folder: Path, data: dict):
 
 
 def handle_docker_kubernetes_operations():
-    """Handle Docker/Kubernetes operations for existing projects."""
-    global docker_actions, kubernetes_actions
-    existing_projects = list_existing_projects()
+    """Enhanced Docker/Kubernetes operations handler."""
+    main_options = [
+        "Global Docker Management",
+        "Global Kubernetes Management",
+        "Project Container Management",
+        "Container System Health Check",
+        "Back to Main Menu"
+    ]
 
-    if not existing_projects:
-        status_message("No projects found! Please create a project first.", False)
-        rich_message("Redirecting to project creation...", False)
-        return create_new_project()
+    while True:
+        choice = Question("Select container management option:", main_options).ask()
 
-    # Select project
-    project_choice = Question("Select a project to configure:", existing_projects).ask()
+        if "Back" in choice:
+            break
+        elif "Global Docker" in choice:
+            # Check if Docker is available
+            success, _, _ = run_command_with_output("docker --version")
+            if not success:
+                status_message("Docker is not available or not running.", False)
+                continue
+            global_docker_management()
 
-    if project_choice not in existing_projects:
-        status_message("Invalid project selection.", False)
-        return None
+        elif "Global Kubernetes" in choice:
+            # Check if kubectl is available
+            success, _, _ = run_command_with_output("kubectl version --client=true")
+            if not success:
+                status_message("kubectl is not available or not configured.", False)
+                continue
+            global_kubernetes_management()
 
-    # Load project data
-    data = load_existing_project(project_choice)
-    if not data:
-        return None
+        elif "Project Container" in choice:
+            existing_projects = list_existing_projects()
+            if not existing_projects:
+                status_message("No projects found! Please create a project first.", False)
+                continue
 
-    project_folder = Path(data["selected_folder"])
+            project_choice = Question("Select a project:", existing_projects).ask()
+            data = load_existing_project(project_choice)
+            if data:
+                project_specific_container_management(data)
 
-    # Check if project has Docker or Kubernetes addons
-    addons = data.get("addons", [])
-    has_docker = "Add Docker Support" in addons
-    has_kubernetes = "Add Kubernetes Support" in addons
+        elif "Health Check" in choice:
+            boxed_message("Container System Health Check")
 
-    available_options = []
-    if has_docker:
-        available_options.append("Docker")
-    if has_kubernetes:
-        available_options.append("Kubernetes")
-    available_options.append("Back to Main Menu")
+            # Docker health
+            success, output, _ = run_command_with_output("docker --version")
+            if success:
+                arrow_message(f"Docker: Available ({output.strip()})")
 
-    if not has_docker and not has_kubernetes:
-        status_message("This project doesn't have Docker or Kubernetes support configured!", False)
-        arrow_message("Available addons in this project:")
-        for addon in addons:
-            arrow_message(f"- {addon}")
-        return data
+                # Docker daemon status
+                success, _, _ = run_command_with_output("docker ps")
+                if success:
+                    arrow_message("Docker daemon: Running")
+                else:
+                    arrow_message("Docker daemon: Not running")
+            else:
+                arrow_message("Docker: Not available")
 
-    # Select Docker or Kubernetes
-    container_choice = Question(
-        "What would you like to configure?",
-        available_options
-    ).ask()
+            # Kubernetes health
+            success, output, _ = run_command_with_output("kubectl version --client=true")
+            if success:
+                arrow_message("kubectl: Available")
 
-    if "Back" in container_choice:
-        return data
+                # Cluster connectivity
+                success, output, _ = run_command_with_output("kubectl cluster-info")
+                if success:
+                    arrow_message("Kubernetes cluster: Connected")
+                else:
+                    arrow_message("Kubernetes cluster: Not connected")
+            else:
+                arrow_message("kubectl: Not available")
 
-    if "Docker" in container_choice:
-        # Check if Docker files actually exist
-        docker_info = read_docker_configuration(project_folder)
-        if not docker_info:
-            status_message("No Docker configuration found!", False)
-            docker_actions = ["Enable Docker Configuration"]
-
-        # Docker operations
-        docker_choice = Question("Select Docker operation:", docker_actions).ask()
-
-        if "Edit" in docker_choice:
-            data = edit_docker_configuration(project_folder, data)
-        elif "Delete" in docker_choice:
-            data = delete_docker_configuration(project_folder, data)
-        else:
-            from launchkit.modules.addon_management import enable_docker
-            enable_docker(project_folder, data["project_stack"])
-
-    elif "Kubernetes" in container_choice:
-        # Check if Kubernetes files actually exist
-        k8s_info = read_kubernetes_configuration(project_folder)
-        if not k8s_info or k8s_info.get('total_files', 0) == 0:
-            status_message("Kubernetes addon is configured but no Kubernetes files found!", False)
-            kubernetes_actions = ["Enable Kubernetes Configuration"]
-
-        # Kubernetes operations
-        k8s_choice = Question("Select Kubernetes operation:", kubernetes_actions).ask()
-
-        if "Edit" in k8s_choice:
-            data = edit_kubernetes_configuration(project_folder, data)
-        elif "Delete" in k8s_choice:
-            data = delete_kubernetes_configuration(project_folder, data)
-        else:
-            from launchkit.modules.addon_management import enable_kubernetes
-            enable_kubernetes(project_folder, data["project_stack"])
-
-    # Save updated data
-    if data:
-        add_data_to_db(data, data["selected_folder"])
-
-    return data
+            input("\nPress Enter to continue...")
 
 
 def create_new_project():
