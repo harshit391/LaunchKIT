@@ -2023,7 +2023,9 @@ def rename_project(data: Dict[str, Any], folder: Path) -> Tuple[Dict, Path]:
         add_data_to_db(data, str(new_folder_path))
 
         status_message(f"Project '{project_name}' successfully renamed to '{new_name}'!")
-        return data, new_folder_path
+        boxed_message("Please Restart the Application to Continue with changes!")
+        exiting_program()
+        sys.exit(0)
 
     except Exception as e:
         status_message(f"An error occurred during renaming: {e}", False)
@@ -2616,36 +2618,17 @@ def read_kubernetes_configuration(project_folder: Path):
 
 
 def get_all_docker_containers(include_stopped: bool = True) -> List[Dict[str, Any]]:
-    """Get comprehensive list of all Docker containers."""
+    """Get a list of all Docker containers."""
     containers = []
-
-    # Get running containers
     flag = "--all" if include_stopped else ""
-    success, output, error = run_command_with_output(
-        f'docker ps {flag} --format "json"'
-    )
-
-    if not success:
-        return containers
-
+    success, output, _ = run_command_with_output(f'docker ps {flag} --format "json"')
+    if not success: return containers
     for line in output.strip().split('\n'):
         if line.strip():
             try:
-                container_data = json.loads(line)
-                containers.append({
-                    'id': container_data.get('ID', ''),
-                    'name': container_data.get('Names', ''),
-                    'image': container_data.get('Image', ''),
-                    'status': container_data.get('Status', ''),
-                    'ports': container_data.get('Ports', ''),
-                    'created': container_data.get('CreatedAt', ''),
-                    'command': container_data.get('Command', ''),
-                    'size': container_data.get('Size', ''),
-                    'state': container_data.get('State', '')
-                })
+                containers.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
-
     return containers
 
 
@@ -2717,17 +2700,13 @@ def display_docker_containers(containers: List[Dict[str, Any]]):
     if not containers:
         status_message("No Docker containers found.", False)
         return
-
     boxed_message(f"Docker Containers ({len(containers)} found)")
-
-    for i, container in enumerate(containers, 1):
-        arrow_message(f"[{i}] {container['name']}")
-        arrow_message(f"    Image: {container['image']}")
-        arrow_message(f"    Status: {container['status']}")
-        arrow_message(f"    Ports: {container['ports'] or 'None'}")
-        arrow_message(f"    ID: {container['id'][:12]}")
-        print()  # Add spacing
-
+    for i, c in enumerate(containers, 1):
+        arrow_message(f"[{i}] {c.get('Names', 'N/A')}")
+        arrow_message(f"    Image: {c.get('Image', 'N/A')}")
+        arrow_message(f"    Status: {c.get('Status', 'N/A')}")
+        arrow_message(f"    Ports: {c.get('Ports', 'None')}")
+        print()
 
 def display_docker_images(images: List[Dict[str, Any]]):
     """Display Docker images in a formatted way."""
@@ -3750,12 +3729,11 @@ def edit_kubernetes_configuration(project_folder: Path, data: dict):
 
 
 def handle_docker_kubernetes_operations():
-    """Enhanced Docker/Kubernetes operations handler."""
+    """Main handler for Docker and Kubernetes operations."""
     main_options = [
         "Global Docker Management",
         "Global Kubernetes Management",
-        "Project Container Management",
-        "Container System Health Check",
+        "Project-Specific Container Management",
         "Back to Main Menu"
     ]
 
@@ -3765,64 +3743,24 @@ def handle_docker_kubernetes_operations():
         if "Back" in choice:
             break
         elif "Global Docker" in choice:
-            # Check if Docker is available
-            success, _, _ = run_command_with_output("docker --version")
-            if not success:
+            if run_command("docker --version")[0]:
+                global_docker_management()
+            else:
                 status_message("Docker is not available or not running.", False)
-                continue
-            global_docker_management()
-
         elif "Global Kubernetes" in choice:
-            # Check if kubectl is available
-            success, _, _ = run_command_with_output("kubectl version --client=true")
-            if not success:
+            if run_command("kubectl version --client=true")[0]:
+                global_kubernetes_management()
+            else:
                 status_message("kubectl is not available or not configured.", False)
-                continue
-            global_kubernetes_management()
-
-        elif "Project Container" in choice:
+        elif "Project-Specific" in choice:
             existing_projects = list_existing_projects()
             if not existing_projects:
                 status_message("No projects found! Please create a project first.", False)
                 continue
-
             project_choice = Question("Select a project:", existing_projects).ask()
             data = load_existing_project(project_choice)
             if data:
                 project_specific_container_management(data)
-
-        elif "Health Check" in choice:
-            boxed_message("Container System Health Check")
-
-            # Docker health
-            success, output, _ = run_command_with_output("docker --version")
-            if success:
-                arrow_message(f"Docker: Available ({output.strip()})")
-
-                # Docker daemon status
-                success, _, _ = run_command_with_output("docker ps")
-                if success:
-                    arrow_message("Docker daemon: Running")
-                else:
-                    arrow_message("Docker daemon: Not running")
-            else:
-                arrow_message("Docker: Not available")
-
-            # Kubernetes health
-            success, output, _ = run_command_with_output("kubectl version --client=true")
-            if success:
-                arrow_message("kubectl: Available")
-
-                # Cluster connectivity
-                success, output, _ = run_command_with_output("kubectl cluster-info")
-                if success:
-                    arrow_message("Kubernetes cluster: Connected")
-                else:
-                    arrow_message("Kubernetes cluster: Not connected")
-            else:
-                arrow_message("kubectl: Not available")
-
-            input("\nPress Enter to continue...")
 
 
 def create_new_project():
@@ -3958,13 +3896,12 @@ def welcome_user():
     while True:  # Loop to allow returning to this menu
         existing_projects = list_existing_projects()
 
-        main_options = ["Start New Project", "Docker / Kubernetes", "Exit"]
+        main_options = ["Start New Project", "Docker / Kubernetes", "Exit"] # <--- ADD "Docker / Kubernetes"
         prompt = "What would you like to do?"
 
         if existing_projects:
-            main_options = ["Start New Project", "Continue Existing Project", "Docker / Kubernetes", "Exit"]
-        else:
-            prompt = "No existing projects found. Let's get started!"
+            # Add "Continue" option if projects exist
+            main_options.insert(1, "Continue Existing Project")
 
         project_action = Question(prompt, main_options).ask()
 
@@ -3982,7 +3919,7 @@ def welcome_user():
         elif "Start" in project_action:
             return create_new_project()
 
-        elif "Docker" in project_action:
+        elif "Docker" in project_action: # <--- ADD THIS BLOCK
             handle_docker_kubernetes_operations()
             # After the function returns, continue the loop to show the main menu again.
             continue

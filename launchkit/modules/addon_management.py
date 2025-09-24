@@ -338,6 +338,28 @@ jobs:
 
     status_message("GitHub Actions CI workflow created!")
 
+def add_new_addons(data, folder):
+    """Add new add-ons to existing project with dependency installation."""
+    from launchkit.utils.enum_utils import ADDON_DISPATCH
+
+    current_addons = data.get("addons", [])
+    available_addons = [addon for addon in ADDON_DISPATCH.keys()
+                        if addon not in current_addons]
+
+    if not available_addons:
+        status_message("All available add-ons are already configured!", True)
+        return
+
+    available_addons.append("Cancel")
+    new_addon = Question("Select add-on to add:", available_addons).ask()
+
+    if new_addon != "Cancel" and new_addon in available_addons:
+        stack = data.get("project_stack", "")
+        apply_addons([new_addon], folder, stack)
+        data["addons"].append(new_addon)
+        add_data_to_db(data, str(folder))
+        status_message(f"{new_addon} added successfully!")
+
 
 def enable_lint_format(folder: Path, stack: str):
     """Enhanced linting and formatting configuration with dependency installation."""
@@ -1662,112 +1684,29 @@ API_KEY=your-api-key-here
     (folder / ".env.example").write_text(env_example)
 
 
+
 def enable_kubernetes(folder: Path, stack: str):
-    """Add comprehensive Kubernetes support with production-ready configurations."""
+    """Add comprehensive Kubernetes support with Kustomize, Helm, and helper scripts."""
     arrow_message("Adding Kubernetes support...")
 
     k8s_dir = folder / "k8s"
-    k8s_dir.mkdir(exist_ok=True)
+    app_name = folder.name.lower().replace("_", "-")
+    app_port = "3000" if _is_node_based_stack(stack) else "5000"
 
-    # Create subdirectories for better organization
-    (k8s_dir / "base").mkdir(exist_ok=True)
+    # Create Kustomize structure
+    (k8s_dir / "base").mkdir(parents=True, exist_ok=True)
     (k8s_dir / "overlays" / "development").mkdir(parents=True, exist_ok=True)
-    (k8s_dir / "overlays" / "staging").mkdir(parents=True, exist_ok=True)
     (k8s_dir / "overlays" / "production").mkdir(parents=True, exist_ok=True)
 
-    app_port = "3000" if _is_node_based_stack(stack) else "5000"
-    app_name = folder.name.lower().replace(" ", "-").replace("_", "-")
-
-    # Ask for Kubernetes configuration options
-    cluster_type = Question("Select Kubernetes deployment target:",
-                            ["Local (minikube/kind)", "Cloud (EKS/GKE/AKS)", "On-premise"]).ask()
-
-    enable_ingress = Question("Enable Ingress Controller?", ["Yes", "No"]).ask()
-    enable_monitoring = Question("Enable monitoring (Prometheus/Grafana)?", ["Yes", "No"]).ask()
-    enable_logging = Question("Enable centralized logging (ELK/Loki)?", ["Yes", "No"]).ask()
-    enable_autoscaling = Question("Enable Horizontal Pod Autoscaling?", ["Yes", "No"]).ask()
-
-
-
-    # Create Namespace
-    namespace_yaml = f"""apiVersion: v1
-kind: Namespace
-metadata:
-  name: {app_name}
-  labels:
-    name: {app_name}
-    environment: production
-"""
-    (k8s_dir / "base" / "namespace.yaml").write_text(namespace_yaml)
-
-    print("Problem 1")
-
-    # Create ConfigMap for application configuration
-    configmap_yaml = f"""apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {app_name}-config
-  namespace: {app_name}
-data:
-  NODE_ENV: "production"
-  PORT: "{app_port}"
-  # Database configurations will be added based on stack
-"""
-
-    # Add stack-specific configurations
-    if _is_node_based_stack(stack):
-        if "MERN" in stack:
-            configmap_yaml += """  MONGODB_URI: "mongodb://mongo-service:27017/myapp"
-"""
-        elif "PERN" in stack:
-            configmap_yaml += """  DATABASE_URL: "postgresql://postgres:password@postgres-service:5432/myapp"
-"""
-        configmap_yaml += """  REDIS_URL: "redis://redis-service:6379/0"
-"""
-    elif _is_python_based_stack(stack):
-        configmap_yaml += """  FLASK_ENV: "production"
-  FLASK_RUN_HOST: "0.0.0.0"
-  DATABASE_URL: "postgresql://postgres:password@postgres-service:5432/myapp"
-  REDIS_URL: "redis://redis-service:6379/0"
-"""
-
-    (k8s_dir / "base" / "configmap.yaml").write_text(configmap_yaml)
-
-    print("Problem 2")
-
-    # Create Secret for sensitive data
-    secret_yaml = f"""apiVersion: v1
-kind: Secret
-metadata:
-  name: {app_name}-secrets
-  namespace: {app_name}
-type: Opaque
-stringData:
-  DB_PASSWORD: "password"  # Change this in production!
-  JWT_SECRET: "your-jwt-secret-here"  # Change this!
-  SECRET_KEY: "your-secret-key-here"  # Change this!
-  API_KEY: "your-api-key-here"  # Add your API keys
-"""
-    (k8s_dir / "base" / "secret.yaml").write_text(secret_yaml)
-
-    print("Problem 3")
-
-    # Enhanced Deployment with production-ready features
-    deployment_yaml = f"""apiVersion: apps/v1
+    # --- Create Base Manifests ---
+    # deployment.yaml
+    deployment_yaml = f"""
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {app_name}-deployment
-  namespace: {app_name}
-  labels:
-    app: {app_name}
-    version: v1
 spec:
-  replicas: 3
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 1
+  replicas: 1
   selector:
     matchLabels:
       app: {app_name}
@@ -1775,365 +1714,96 @@ spec:
     metadata:
       labels:
         app: {app_name}
-        version: v1
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "{app_port}"
-        prometheus.io/path: "/metrics"
     spec:
-      serviceAccountName: {app_name}-service-account
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1001
-        fsGroup: 1001
       containers:
       - name: {app_name}
         image: {app_name}:latest
-        imagePullPolicy: Always
         ports:
         - containerPort: {app_port}
-          name: http
-          protocol: TCP
-        env:
-        - name: NODE_ENV
-          valueFrom:
-            configMapKeyRef:
-              name: {app_name}-config
-              key: NODE_ENV
-        - name: PORT
-          valueFrom:
-            configMapKeyRef:
-              name: {app_name}-config
-              key: PORT
-        - name: DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: {app_name}-secrets
-              key: DB_PASSWORD
-        - name: JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: {app_name}-secrets
-              key: JWT_SECRET
-        envFrom:
-        - configMapRef:
-            name: {app_name}-config
-        - secretRef:
-            name: {app_name}-secrets
         resources:
           requests:
-            cpu: 100m
-            memory: 128Mi
+            cpu: "100m"
+            memory: "128Mi"
           limits:
-            cpu: 500m
-            memory: 512Mi
+            cpu: "500m"
+            memory: "512Mi"
         livenessProbe:
           httpGet:
             path: /health
             port: {app_port}
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
+          initialDelaySeconds: 15
+          periodSeconds: 20
         readinessProbe:
           httpGet:
-            path: /ready
+            path: /health
             port: {app_port}
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
-        securityContext:
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop:
-            - ALL
-        volumeMounts:
-        - name: tmp
-          mountPath: /tmp
-        - name: cache
-          mountPath: /app/cache
-      volumes:
-      - name: tmp
-        emptyDir: {{}}
-      - name: cache
-        emptyDir: {{}}
-      nodeSelector:
-        kubernetes.io/os: linux
-      tolerations:
-      - key: "node.kubernetes.io/not-ready"
-        operator: "Exists"
-        effect: "NoExecute"
-        tolerationSeconds: 300
-      - key: "node.kubernetes.io/unreachable"
-        operator: "Exists"
-        effect: "NoExecute"
-        tolerationSeconds: 300
+          initialDelaySeconds: 5
+          periodSeconds: 10
 """
     (k8s_dir / "base" / "deployment.yaml").write_text(deployment_yaml)
 
-    print("Problem 4")
-
-    # Enhanced Service with multiple port support
-    service_yaml = f"""apiVersion: v1
+    # service.yaml
+    service_yaml = f"""
+apiVersion: v1
 kind: Service
 metadata:
   name: {app_name}-service
-  namespace: {app_name}
-  labels:
-    app: {app_name}
-  annotations:
-    service.beta.kubernetes.io/aws-load-balancer-type: nlb  # For AWS
-    service.beta.kubernetes.io/azure-load-balancer-internal: "false"  # For Azure
 spec:
   selector:
     app: {app_name}
   ports:
-  - name: http
-    protocol: TCP
-    port: 80
-    targetPort: {app_port}
-  - name: metrics
-    protocol: TCP
-    port: 9090
-    targetPort: 9090
+    - protocol: TCP
+      port: 80
+      targetPort: {app_port}
   type: ClusterIP
 """
     (k8s_dir / "base" / "service.yaml").write_text(service_yaml)
 
-    print("Problem 5")
-
-    # Service Account with proper RBAC
-    service_account_yaml = f"""apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: {app_name}-service-account
-  namespace: {app_name}
-  labels:
-    app: {app_name}
-automountServiceAccountToken: false
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  namespace: {app_name}
-  name: {app_name}-role
-rules:
-- apiGroups: [""]
-  resources: ["configmaps", "secrets"]
-  verbs: ["get", "list"]
-- apiGroups: [""]
-  resources: ["pods"]
-  verbs: ["get", "list"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: {app_name}-rolebinding
-  namespace: {app_name}
-subjects:
-- kind: ServiceAccount
-  name: {app_name}-service-account
-  namespace: {app_name}
-roleRef:
-  kind: Role
-  name: {app_name}-role
-  apiGroup: rbac.authorization.k8s.io
+    # kustomization.yaml for base
+    base_kustomization_yaml = """
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml
 """
-    (k8s_dir / "base" / "serviceaccount.yaml").write_text(service_account_yaml)
+    (k8s_dir / "base" / "kustomization.yaml").write_text(base_kustomization_yaml)
 
-    print("Problem 6")
-
-    # Create Ingress if requested
-    if enable_ingress == "Yes":
-        ingress_yaml = f"""apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: {app_name}-ingress
-  namespace: {app_name}
-  labels:
-    app: {app_name}
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    nginx.ingress.kubernetes.io/rate-limit: "100"
-    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
-spec:
-  ingressClassName: nginx
-  tls:
-  - hosts:
-    - {app_name}.yourdomain.com
-    secretName: {app_name}-tls
-  rules:
-  - host: {app_name}.yourdomain.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: {app_name}-service
-            port:
-              number: 80
+    # --- Create Overlays ---
+    # Development overlay
+    dev_kustomization_yaml = """
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+bases:
+  - ../../base
+nameSuffix: -dev
+replicas:
+  - name: """ + app_name + """-deployment
+    count: 1
 """
-        (k8s_dir / "base" / "ingress.yaml").write_text(ingress_yaml)
+    (k8s_dir / "overlays" / "development" / "kustomization.yaml").write_text(dev_kustomization_yaml)
 
-        print("Problem 7")
-
-    # Create HPA if requested
-    if enable_autoscaling == "Yes":
-        hpa_yaml = f"""apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: {app_name}-hpa
-  namespace: {app_name}
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: {app_name}-deployment
-  minReplicas: 2
-  maxReplicas: 10
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
-  behavior:
-    scaleDown:
-      stabilizationWindowSeconds: 300
-      policies:
-      - type: Percent
-        value: 10
-        periodSeconds: 60
-    scaleUp:
-      stabilizationWindowSeconds: 0
-      policies:
-      - type: Percent
-        value: 100
-        periodSeconds: 15
-      - type: Pods
-        value: 4
-        periodSeconds: 15
-      selectPolicy: Max
+    # Production overlay
+    prod_kustomization_yaml = """
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+bases:
+  - ../../base
+nameSuffix: -prod
+replicas:
+  - name: """ + app_name + """-deployment
+    count: 3
 """
-        (k8s_dir / "base" / "hpa.yaml").write_text(hpa_yaml)
+    (k8s_dir / "overlays" / "production" / "kustomization.yaml").write_text(prod_kustomization_yaml)
 
-        print("Problem 8")
-
-    # Create PodDisruptionBudget for high availability
-    pdb_yaml = f"""apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: {app_name}-pdb
-  namespace: {app_name}
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: {app_name}
-"""
-    (k8s_dir / "base" / "poddisruptionbudget.yaml").write_text(pdb_yaml)
-
-    print("Problem 9")
-
-    # Create NetworkPolicy for security
-    network_policy_yaml = f"""apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: {app_name}-network-policy
-  namespace: {app_name}
-spec:
-  podSelector:
-    matchLabels:
-      app: {app_name}
-  policyTypes:
-  - Ingress
-  - Egress
-  ingress:
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          name: ingress-nginx
-    - namespaceSelector:
-        matchLabels:
-          name: monitoring
-    ports:
-    - protocol: TCP
-      port: {app_port}
-  egress:
-  - to:
-    - namespaceSelector:
-        matchLabels:
-          name: kube-system
-  - to:
-    - podSelector:
-        matchLabels:
-          app: postgres
-    ports:
-    - protocol: TCP
-      port: 5432
-  - to:
-    - podSelector:
-        matchLabels:
-          app: redis
-    ports:
-    - protocol: TCP
-      port: 6379
-  - ports:
-    - protocol: TCP
-      port: 53
-    - protocol: UDP
-      port: 53
-"""
-    (k8s_dir / "base" / "networkpolicy.yaml").write_text(network_policy_yaml)
-
-    print("Problem 10")
-
-    # Add database resources based on stack
-    create_database_resources(k8s_dir, stack, app_name)
-
-    print("Problem 11")
-
-    # Create monitoring resources if requested
-    if enable_monitoring == "Yes":
-        create_monitoring_resources(k8s_dir, app_name, app_port)
-
-    print("Problem 12")
-
-    # Create logging resources if requested
-    if enable_logging == "Yes":
-        create_logging_resources(k8s_dir, app_name)
-
-    print("Problem 13")
-
-    # Create Kustomization files for different environments
-    create_kustomization_files(k8s_dir, app_name, cluster_type)
-
-    print("Problem 14")
-
-    # Create deployment scripts and helpers
-    create_k8s_scripts(folder, app_name)
-
-    print("Problem 15")
-
-    # Create Helm chart (optional but recommended)
+    # --- Create Helm Chart ---
     create_helm_chart(folder, stack, app_name, app_port)
 
-    print("Problem 16")
+    # --- Create Helper Scripts ---
+    create_k8s_scripts(folder, app_name)
 
-    status_message("Kubernetes configuration added with production-ready features!")
+    status_message("Kubernetes configuration added with Kustomize, Helm, and scripts!")
+
 
 
 def create_database_resources(k8s_dir: Path, stack: str, app_name: str):
@@ -2963,333 +2633,64 @@ spec:
 
 
 def create_k8s_scripts(folder: Path, app_name: str):
-    """Create helpful Kubernetes management scripts."""
+    """Create helper scripts for Kubernetes management."""
     scripts_dir = folder / "scripts"
     scripts_dir.mkdir(exist_ok=True)
 
     # Deploy script
     deploy_script = f"""#!/bin/bash
-
-# Kubernetes deployment script for {app_name}
-
-set -e
-
+# Deploy to a specific environment (development or production)
 ENVIRONMENT=${{1:-development}}
-IMAGE_TAG=${{2:-latest}}
-NAMESPACE="{app_name}"
-
-echo "🚀 Deploying {app_name} to $ENVIRONMENT environment..."
-
-# Check if kubectl is available
-if ! command -v kubectl &> /dev/null; then
-    echo "❌ kubectl not found. Please install kubectl first."
-    exit 1
-fi
-
-# Check if kustomize is available
-if ! command -v kustomize &> /dev/null; then
-    echo "❌ kustomize not found. Please install kustomize first."
-    exit 1
-fi
-
-# Create namespace if it doesn't exist
-kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
-
-# Build and apply manifests
-echo "📦 Building manifests for $ENVIRONMENT..."
-cd k8s/overlays/$ENVIRONMENT
-
-# Update image tag
-kustomize edit set image {app_name}={app_name}:$IMAGE_TAG
-
-# Apply configurations
-echo "⚡ Applying configurations..."
-kustomize build . | kubectl apply -f -
-
-# Wait for deployment
-echo "⏳ Waiting for deployment to complete..."
-kubectl rollout status deployment/{app_name}-deployment -n $NAMESPACE --timeout=300s
-
-# Show status
-echo "✅ Deployment completed!"
-echo ""
-echo "📊 Pod status:"
-kubectl get pods -n $NAMESPACE -l app={app_name}
-
-echo ""
-echo "🔗 Service information:"
-kubectl get svc -n $NAMESPACE
-
-if kubectl get ingress -n $NAMESPACE &> /dev/null; then
-    echo ""
-    echo "🌐 Ingress information:"
-    kubectl get ingress -n $NAMESPACE
-fi
-
-echo ""
-echo "🎉 {app_name} is now running in $ENVIRONMENT!"
+kubectl apply -k k8s/overlays/$ENVIRONMENT
 """
+    (scripts_dir / "k8s-deploy.sh").write_text(deploy_script)
 
     # Status script
     status_script = f"""#!/bin/bash
-
-# Status check script for {app_name}
-
-NAMESPACE="{app_name}"
-
-echo "📊 {app_name} Status Dashboard"
-echo "==============================="
-
-# Check if namespace exists
-if ! kubectl get namespace $NAMESPACE &> /dev/null; then
-    echo "❌ Namespace '$NAMESPACE' not found. Application may not be deployed."
-    exit 1
-fi
-
-echo ""
-echo "🏠 Namespace: $NAMESPACE"
-echo ""
-
-echo "📦 Pods:"
-kubectl get pods -n $NAMESPACE -o wide
-
-echo ""
-echo "🔧 Services:"
-kubectl get svc -n $NAMESPACE
-
-echo ""
-echo "📊 Deployments:"
-kubectl get deployments -n $NAMESPACE
-
-echo ""
-echo "💾 Persistent Volumes:"
-kubectl get pvc -n $NAMESPACE
-
-if kubectl get ingress -n $NAMESPACE &> /dev/null; then
-    echo ""
-    echo "🌐 Ingress:"
-    kubectl get ingress -n $NAMESPACE
-fi
-
-if kubectl get hpa -n $NAMESPACE &> /dev/null; then
-    echo ""
-    echo "📈 Horizontal Pod Autoscaler:"
-    kubectl get hpa -n $NAMESPACE
-fi
-
-echo ""
-echo "📋 Recent Events:"
-kubectl get events -n $NAMESPACE --sort-by='.lastTimestamp' | tail -10
-
-echo ""
-echo "🔍 Application Health:"
-APP_PODS=$(kubectl get pods -n $NAMESPACE -l app={app_name} -o jsonpath='{{.items[*].metadata.name}}')
-for pod in $APP_PODS; do
-    echo "  Pod: $pod"
-    kubectl get pod $pod -n $NAMESPACE -o jsonpath='    Status: {{.status.phase}}{{"\n"}}'
-    kubectl get pod $pod -n $NAMESPACE -o jsonpath='    Ready: {{range .status.containerStatuses}}{{.ready}} {{end}}{{"\n"}}'
-    kubectl get pod $pod -n $NAMESPACE -o jsonpath='    Restarts: {{range .status.containerStatuses}}{{.restartCount}} {{end}}{{"\n"}}'
-done
+# Get status of deployed resources
+kubectl get all -l app={app_name}
 """
+    (scripts_dir / "k8s-status.sh").write_text(status_script)
 
-    # Logs script
-    logs_script = f"""#!/bin/bash
-
-# Logs viewer script for {app_name}
-
-NAMESPACE="{app_name}"
-FOLLOW=${{1:-false}}
-
-echo "📋 {app_name} Logs"
-echo "=================="
-
-if [ "$FOLLOW" = "follow" ] || [ "$FOLLOW" = "-f" ]; then
-    echo "Following logs (Ctrl+C to stop)..."
-    kubectl logs -f -l app={app_name} -n $NAMESPACE --all-containers=true --prefix=true
-else
-    echo "Recent logs:"
-    kubectl logs -l app={app_name} -n $NAMESPACE --all-containers=true --prefix=true --tail=100
-fi
-"""
-
-    # Scale script
-    scale_script = f"""#!/bin/bash
-
-# Scaling script for {app_name}
-
-NAMESPACE="{app_name}"
-REPLICAS=${{1:-3}}
-
-if [ -z "$1" ]; then
-    echo "Usage: $0 <number_of_replicas>"
-    echo "Current replicas:"
-    kubectl get deployment {app_name}-deployment -n $NAMESPACE -o jsonpath='{{.spec.replicas}}'
-    echo ""
-    exit 1
-fi
-
-echo "🔄 Scaling {app_name} to $REPLICAS replicas..."
-
-kubectl scale deployment {app_name}-deployment --replicas=$REPLICAS -n $NAMESPACE
-
-echo "⏳ Waiting for scaling to complete..."
-kubectl rollout status deployment/{app_name}-deployment -n $NAMESPACE
-
-echo "✅ Scaling completed!"
-kubectl get pods -n $NAMESPACE -l app={app_name}
-"""
-
-    # Cleanup script
-    cleanup_script = f"""#!/bin/bash
-
-# Cleanup script for {app_name}
-
-NAMESPACE="{app_name}"
-CONFIRM=${{1:-false}}
-
-echo "🧹 {app_name} Cleanup Script"
-echo "============================"
-
-if [ "$CONFIRM" != "confirm" ]; then
-    echo "⚠️  This will delete ALL resources in the '$NAMESPACE' namespace!"
-    echo ""
-    echo "Resources to be deleted:"
-    kubectl get all -n $NAMESPACE
-    echo ""
-    echo "To proceed, run: $0 confirm"
-    exit 1
-fi
-
-echo "🗑️  Deleting all resources in namespace '$NAMESPACE'..."
-
-# Delete all resources in the namespace
-kubectl delete all --all -n $NAMESPACE
-
-# Delete persistent volume claims
-kubectl delete pvc --all -n $NAMESPACE
-
-# Delete secrets and configmaps
-kubectl delete secrets,configmaps --all -n $NAMESPACE
-
-# Delete the namespace
-kubectl delete namespace $NAMESPACE
-
-echo "✅ Cleanup completed!"
-"""
-
-    # Debug script
-    debug_script = f"""#!/bin/bash
-
-# Debug script for {app_name}
-
-NAMESPACE="{app_name}"
-POD_NAME=$1
-
-if [ -z "$POD_NAME" ]; then
-    echo "Available pods:"
-    kubectl get pods -n $NAMESPACE -l app={app_name}
-    echo ""
-    echo "Usage: $0 <pod_name>"
-    exit 1
-fi
-
-echo "🔍 Debugging pod: $POD_NAME"
-echo "=========================="
-
-echo ""
-echo "📋 Pod Description:"
-kubectl describe pod $POD_NAME -n $NAMESPACE
-
-echo ""
-echo "📊 Pod Events:"
-kubectl get events -n $NAMESPACE --field-selector involvedObject.name=$POD_NAME
-
-echo ""
-echo "🚪 Connecting to pod shell..."
-kubectl exec -it $POD_NAME -n $NAMESPACE -- /bin/sh
-"""
-
-    # Backup script
-    backup_script = f"""#!/bin/bash
-
-# Backup script for {app_name}
-
-NAMESPACE="{app_name}"
-BACKUP_DIR="./backups/$(date +%Y-%m-%d-%H-%M-%S)"
-mkdir -p $BACKUP_DIR
-
-echo "💾 Creating backup of {app_name}..."
-echo "Backup location: $BACKUP_DIR"
-
-# Backup all YAML configurations
-echo "📄 Backing up configurations..."
-kubectl get all -n $NAMESPACE -o yaml > $BACKUP_DIR/all-resources.yaml
-kubectl get configmaps -n $NAMESPACE -o yaml > $BACKUP_DIR/configmaps.yaml
-kubectl get secrets -n $NAMESPACE -o yaml > $BACKUP_DIR/secrets.yaml
-kubectl get pvc -n $NAMESPACE -o yaml > $BACKUP_DIR/persistent-volumes.yaml
-
-# Backup database if exists
-if kubectl get pods -n $NAMESPACE -l app=postgres &> /dev/null; then
-    echo "🗄️  Backing up PostgreSQL database..."
-    POSTGRES_POD=$(kubectl get pods -n $NAMESPACE -l app=postgres -o jsonpath='{{.items[0].metadata.name}}')
-    kubectl exec $POSTGRES_POD -n $NAMESPACE -- pg_dumpall -U postgres > $BACKUP_DIR/postgres-backup.sql
-fi
-
-if kubectl get pods -n $NAMESPACE -l app=mongo &> /dev/null; then
-    echo "🗄️  Backing up MongoDB database..."
-    MONGO_POD=$(kubectl get pods -n $NAMESPACE -l app=mongo -o jsonpath='{{.items[0].metadata.name}}')
-    kubectl exec $MONGO_POD -n $NAMESPACE -- mongodump --archive > $BACKUP_DIR/mongodb-backup.archive
-fi
-
-echo "✅ Backup completed: $BACKUP_DIR"
-"""
-
-    # Write all scripts
-    scripts = {
-        "k8s-deploy.sh": deploy_script,
-        "k8s-status.sh": status_script,
-        "k8s-logs.sh": logs_script,
-        "k8s-scale.sh": scale_script,
-        "k8s-cleanup.sh": cleanup_script,
-        "k8s-debug.sh": debug_script,
-        "k8s-backup.sh": backup_script
-    }
-
-    for script_name, script_content in scripts.items():
-        script_path = scripts_dir / script_name
-        print("14.1")
-        script_path.write_text(script_content, "utf-8")
-        print("14.2")
-        # Make scripts executable
-        import os
-        os.chmod(script_path, 0o755)
-        print("14.3")
+    # Make scripts executable
+    import os
+    os.chmod(scripts_dir / "k8s-deploy.sh", 0o755)
+    os.chmod(scripts_dir / "k8s-status.sh", 0o755)
 
 
 def create_helm_chart(folder: Path, stack: str, app_name: str, app_port: str):
     """Create a Helm chart for easier deployment management."""
     helm_dir = folder / "helm" / app_name
-    helm_dir.mkdir(parents=True, exist_ok=True)
+    (helm_dir / "templates").mkdir(parents=True, exist_ok=True)
 
-    # Chart.yaml
+    # --- Determine stack-specific values first to clean up the f-string ---
+    if "MERN" in stack:
+        db_type = "mongodb"
+        db_host = "mongo-service"
+        db_port = "27017"
+        db_username = "admin"
+    else:  # Default for PERN, Flask, etc.
+        db_type = "postgresql"
+        db_host = "postgres-service"
+        db_port = "5432"
+        db_username = "postgres"
+
+    # Add extra environment variables based on stack
+    extra_env_vars = ""
+    if _is_python_based_stack(stack):
+        extra_env_vars = "  FLASK_ENV: production"
+
+    # --- Chart.yaml (no changes) ---
     chart_yaml = f"""apiVersion: v2
 name: {app_name}
 description: A Helm chart for {app_name}
 type: application
 version: 0.1.0
 appVersion: "1.0.0"
-keywords:
-  - web
-  - application
-maintainers:
-  - name: DevOps Team
-    email: devops@company.com
 """
     (helm_dir / "Chart.yaml").write_text(chart_yaml)
 
-    print("15.1")
-
-    # values.yaml
+    # --- values.yaml (now using the variables we defined) ---
     values_yaml = f"""# Default values for {app_name}
 replicaCount: 3
 
@@ -3298,96 +2699,23 @@ image:
   pullPolicy: IfNotPresent
   tag: "latest"
 
-nameOverride: ""
-fullnameOverride: ""
-
-serviceAccount:
-  create: true
-  annotations: {{}}
-  name: ""
-
-podAnnotations: {{}}
-
-podSecurityContext:
-  fsGroup: 1001
-  runAsNonRoot: true
-  runAsUser: 1001
-
-securityContext:
-  allowPrivilegeEscalation: false
-  capabilities:
-    drop:
-    - ALL
-  readOnlyRootFilesystem: true
-
 service:
   type: ClusterIP
   port: 80
   targetPort: {app_port}
 
-ingress:
-  enabled: false
-  className: "nginx"
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-  hosts:
-    - host: {app_name}.local
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: {app_name}-tls
-      hosts:
-        - {app_name}.local
-
-resources:
-  limits:
-    cpu: 500m
-    memory: 512Mi
-  requests:
-    cpu: 100m
-    memory: 128Mi
-
-autoscaling:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 70
-  targetMemoryUtilizationPercentage: 80
-
-nodeSelector: {{}}
-
-tolerations: []
-
-affinity: {{}}
-
 # Database configuration
 database:
-  type: {"mongodb" if "MERN" in stack else "postgresql"}
-  host: {"mongo-service" if "MERN" in stack else "postgres-service"}
-  port: {"27017" if "MERN" in stack else "5432"}
+  type: {db_type}
+  host: {db_host}
+  port: "{db_port}"
   name: myapp
-  username: {"admin" if "MERN" in stack else "postgres"}
-
-# Redis configuration
-redis:
-  enabled: true
-  host: redis-service
-  port: 6379
-
-# Monitoring
-monitoring:
-  enabled: true
-  serviceMonitor:
-    enabled: true
-  prometheusRule:
-    enabled: true
+  username: {db_username}
 
 # Environment variables
 env:
   NODE_ENV: production
-  {"FLASK_ENV: production" if _is_python_based_stack(stack) else ""}
+{extra_env_vars}
 
 # Secrets (use external secret management in production)
 secrets:
@@ -3395,16 +2723,13 @@ secrets:
   jwtSecret: "your-jwt-secret-here"
   secretKey: "your-secret-key-here"
 """
-
     (helm_dir / "values.yaml").write_text(values_yaml)
 
-    print("15.2")
-
-    # Create templates directory
+    # --- Create templates directory ---
     templates_dir = helm_dir / "templates"
     templates_dir.mkdir(exist_ok=True)
 
-    # Deployment template
+    # --- deployment.yaml template ---
     deployment_template = f"""apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -3412,79 +2737,30 @@ metadata:
   labels:
     {{{{- include "{app_name}.labels" . | nindent 4 }}}}
 spec:
-  {{{{- if not .Values.autoscaling.enabled }}}}
   replicas: {{{{ .Values.replicaCount }}}}
-  {{{{- end }}}}
   selector:
     matchLabels:
       {{{{- include "{app_name}.selectorLabels" . | nindent 6 }}}}
   template:
     metadata:
-      {{{{- with .Values.podAnnotations }}}}
-      annotations:
-        {{{{- toYaml . | nindent 8 }}}}
-      {{{{- end }}}}
       labels:
         {{{{- include "{app_name}.selectorLabels" . | nindent 8 }}}}
     spec:
-      {{{{- with .Values.imagePullSecrets }}}}
-      imagePullSecrets:
-        {{{{- toYaml . | nindent 8 }}}}
-      {{{{- end }}}}
-      serviceAccountName: {{{{ include "{app_name}.serviceAccountName" . }}}}
-      securityContext:
-        {{{{- toYaml .Values.podSecurityContext | nindent 8 }}}}
       containers:
         - name: {{{{ .Chart.Name }}}}
-          securityContext:
-            {{{{- toYaml .Values.securityContext | nindent 12 }}}}
           image: "{{{{ .Values.image.repository }}}}:{{{{ .Values.image.tag | default .Chart.AppVersion }}}}"
           imagePullPolicy: {{{{ .Values.image.pullPolicy }}}}
           ports:
             - name: http
               containerPort: {app_port}
               protocol: TCP
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: http
-            initialDelaySeconds: 30
-            periodSeconds: 10
-          readinessProbe:
-            httpGet:
-              path: /ready
-              port: http
-            initialDelaySeconds: 10
-            periodSeconds: 5
           env:
-            {{{{- range $key, $value := .Values.env }}}}
-            - name: {{{{ $key }}}}
-              value: "{{{{ $value }}}}"
-            {{{{- end }}}}
             - name: DATABASE_URL
               value: "{{{{ .Values.database.type }}}}://{{{{ .Values.database.username }}}}:{{{{ .Values.secrets.dbPassword }}}}@{{{{ .Values.database.host }}}}:{{{{ .Values.database.port }}}}/{{{{ .Values.database.name }}}}"
-            - name: REDIS_URL
-              value: "redis://{{{{ .Values.redis.host }}}}:{{{{ .Values.redis.port }}}}/0"
-          resources:
-            {{{{- toYaml .Values.resources | nindent 12 }}}}
-      {{{{- with .Values.nodeSelector }}}}
-      nodeSelector:
-        {{{{- toYaml . | nindent 8 }}}}
-      {{{{- end }}}}
-      {{{{- with .Values.affinity }}}}
-      affinity:
-        {{{{- toYaml . | nindent 8 }}}}
-      {{{{- end }}}}
-      {{{{- with .Values.tolerations }}}}
-      tolerations:
-        {{{{- toYaml . | nindent 8 }}}}
-      {{{{- end }}}}
 """
     (templates_dir / "deployment.yaml").write_text(deployment_template)
 
-    print("15.3")
-
-    # Helper template
+    # --- _helpers.tpl template (no changes) ---
     helpers_template = f"""{{{{/*
 Expand the name of the chart.
 */}}}}
@@ -3509,21 +2785,12 @@ Create a default fully qualified app name.
 {{{{- end }}}}
 
 {{{{/*
-Create chart name and version as used by the chart label.
-*/}}}}
-{{{{- define "{app_name}.chart" -}}}}
-{{{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}}}
-{{{{- end }}}}
-
-{{{{/*
 Common labels
 */}}}}
 {{{{- define "{app_name}.labels" -}}}}
-helm.sh/chart: {{{{ include "{app_name}.chart" . }}}}
-{{{{ include "{app_name}.selectorLabels" . }}}}
-{{{{- if .Chart.AppVersion }}}}
-app.kubernetes.io/version: {{{{ .Chart.AppVersion | quote }}}}
-{{{{- end }}}}
+helm.sh/chart: {{{{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}}}
+app.kubernetes.io/name: {{{{ include "{app_name}.name" . }}}}
+app.kubernetes.io/instance: {{{{ .Release.Name }}}}
 app.kubernetes.io/managed-by: {{{{ .Release.Service }}}}
 {{{{- end }}}}
 
@@ -3534,24 +2801,10 @@ Selector labels
 app.kubernetes.io/name: {{{{ include "{app_name}.name" . }}}}
 app.kubernetes.io/instance: {{{{ .Release.Name }}}}
 {{{{- end }}}}
-
-{{{{/*
-Create the name of the service account to use
-*/}}}}
-{{{{- define "{app_name}.serviceAccountName" -}}}}
-{{{{- if .Values.serviceAccount.create }}}}
-{{{{- default (include "{app_name}.fullname" .) .Values.serviceAccount.name }}}}
-{{{{- else }}}}
-{{{{- default "default" .Values.serviceAccount.name }}}}
-{{{{- end }}}}
-{{{{- end }}}}
 """
     (templates_dir / "_helpers.tpl").write_text(helpers_template)
 
-    print("15.4")
-
-    # Create additional Helm templates (service, ingress, etc.)
-    # Service template
+    # --- service.yaml template (no changes) ---
     service_template = f"""apiVersion: v1
 kind: Service
 metadata:
@@ -3570,177 +2823,25 @@ spec:
 """
     (templates_dir / "service.yaml").write_text(service_template)
 
-    print("15.5")
-
-    # Create Makefile for easy Helm management
+    # --- Makefile (no changes) ---
     makefile_content = f"""# Helm management for {app_name}
-
-.PHONY: install upgrade uninstall status template dry-run lint package
+.PHONY: install upgrade uninstall
 
 CHART_NAME = {app_name}
 NAMESPACE = {app_name}
-VALUES_FILE = values.yaml
 
 install:
-	helm install $(CHART_NAME) ./helm/$(CHART_NAME) -n $(NAMESPACE) --create-namespace -f $(VALUES_FILE)
+	helm install $(CHART_NAME) ./helm/$(CHART_NAME) -n $(NAMESPACE) --create-namespace
 
 upgrade:
-	helm upgrade $(CHART_NAME) ./helm/$(CHART_NAME) -n $(NAMESPACE) -f $(VALUES_FILE)
+	helm upgrade $(CHART_NAME) ./helm/$(CHART_NAME) -n $(NAMESPACE)
 
 uninstall:
 	helm uninstall $(CHART_NAME) -n $(NAMESPACE)
-
-status:
-	helm status $(CHART_NAME) -n $(NAMESPACE)
-
-template:
-	helm template $(CHART_NAME) ./helm/$(CHART_NAME) -f $(VALUES_FILE)
-
-dry-run:
-	helm install $(CHART_NAME) ./helm/$(CHART_NAME) -n $(NAMESPACE) --create-namespace -f $(VALUES_FILE) --dry-run --debug
-
-lint:
-	helm lint ./helm/$(CHART_NAME)
-
-package:
-	helm package ./helm/$(CHART_NAME)
-
-deps:
-	helm dependency update ./helm/$(CHART_NAME)
 """
     (folder / "Makefile").write_text(makefile_content)
 
-    print("15.6")
-
-    # Create README for Kubernetes deployment
-    readme_content = f"""# {app_name} Kubernetes Deployment
-
-This directory contains Kubernetes manifests and Helm charts for deploying {app_name}.
-
-## Quick Start
-
-### Using kubectl with Kustomize
-
-```bash
-# Development
-kubectl apply -k k8s/overlays/development
-
-# Production
-kubectl apply -k k8s/overlays/production
-```
-
-### Using Helm
-
-```bash
-# Install
-helm install {app_name} ./helm/{app_name} -n {app_name} --create-namespace
-
-# Upgrade
-helm upgrade {app_name} ./helm/{app_name} -n {app_name}
-
-# Uninstall
-helm uninstall {app_name} -n {app_name}
-```
-
-### Using Scripts
-
-```bash
-# Deploy to development
-./scripts/k8s-deploy.sh development
-
-# Check status
-./scripts/k8s-status.sh
-
-# View logs
-./scripts/k8s-logs.sh
-
-# Scale application
-./scripts/k8s-scale.sh 5
-```
-
-## Directory Structure
-
-```
-k8s/
-├── base/                   # Base Kubernetes manifests
-├── overlays/              # Environment-specific overlays
-│   ├── development/
-│   ├── staging/
-│   └── production/
-helm/
-└── {app_name}/            # Helm chart
-    ├── Chart.yaml
-    ├── values.yaml
-    └── templates/
-scripts/                   # Management scripts
-├── k8s-deploy.sh
-├── k8s-status.sh
-├── k8s-logs.sh
-└── ...
-```
-
-## Features
-
-- ✅ Production-ready configurations
-- ✅ Security best practices
-- ✅ Health checks and monitoring
-- ✅ Horizontal Pod Autoscaling
-- ✅ Network policies
-- ✅ Resource limits and requests
-- ✅ Database persistence
-- ✅ Ingress with TLS
-- ✅ Multi-environment support
-
-## Prerequisites
-
-- Kubernetes cluster (v1.20+)
-- kubectl
-- kustomize
-- helm (optional)
-
-## Configuration
-
-Edit the following files to customize your deployment:
-
-- `k8s/base/configmap.yaml` - Application configuration
-- `k8s/base/secret.yaml` - Sensitive data (use external secret management in production)
-- `helm/{app_name}/values.yaml` - Helm values
-
-## Monitoring
-
-If monitoring is enabled, you can access:
-
-- Prometheus metrics at `/metrics` endpoint
-- Grafana dashboards for visualization
-- Alert rules for critical issues
-
-## Security
-
-- Non-root containers
-- Read-only root filesystem
-- Network policies
-- RBAC permissions
-- Secret management
-
-## Troubleshooting
-
-```bash
-# Check pod status
-./scripts/k8s-status.sh
-
-# View logs
-./scripts/k8s-logs.sh follow
-
-# Debug a specific pod
-./scripts/k8s-debug.sh <pod-name>
-
-# Create backup
-./scripts/k8s-backup.sh
-```
-"""
-    (folder / "k8s" / "README.md").write_text(readme_content, "utf-8")
-
-    print("15.7")
+    status_message("Helm chart created successfully!")
 
 
 def apply_addons(addons: List[str], folder: Path, stack: str):
@@ -3766,29 +2867,6 @@ def apply_addons(addons: List[str], folder: Path, stack: str):
             status_message(f"Unknown addon skipped: {addon}", False)
 
     boxed_message("🎉 All add-ons configured!")
-
-
-def add_new_addons(data, folder):
-    """Add new add-ons to existing project with dependency installation."""
-    from launchkit.utils.enum_utils import ADDON_DISPATCH
-
-    current_addons = data.get("addons", [])
-    available_addons = [addon for addon in ADDON_DISPATCH.keys()
-                        if addon not in current_addons]
-
-    if not available_addons:
-        status_message("All available add-ons are already configured!", True)
-        return
-
-    available_addons.append("Cancel")
-    new_addon = Question("Select add-on to add:", available_addons).ask()
-
-    if new_addon != "Cancel" and new_addon in available_addons:
-        stack = data.get("project_stack", "")
-        apply_addons([new_addon], folder, stack)
-        data["addons"].append(new_addon)
-        add_data_to_db(data, str(folder))
-        status_message(f"{new_addon} added successfully!")
 
 
 def install_addon_dependencies(folder: Path, stack: str, addon_name: str):

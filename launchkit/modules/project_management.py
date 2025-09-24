@@ -541,8 +541,8 @@ def handle_existing_project(data, folder):
 def project_management_menu(data, folder):
     """Handle project management tasks."""
     management_options = [
-        "Add New Features/Add-ons",
-        "Rename Project",  # <-- ADD THIS LINE
+        "Add New Features/Add-ons", # <--- ADD THIS LINE
+        "Rename Project",
         "Update Dependencies",
         "View Project Summary",
         "Create Manual Backup",
@@ -555,7 +555,7 @@ def project_management_menu(data, folder):
     while True:
         choice = Question("Project Management:", management_options).ask()
 
-        if "Add New" in choice:
+        if "Add New" in choice: # <--- ADD THIS BLOCK
             add_new_addons(data, folder)
         elif "Rename Project" in choice:
             data, folder = rename_project(data, folder)
