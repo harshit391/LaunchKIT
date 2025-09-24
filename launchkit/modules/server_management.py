@@ -1,10 +1,8 @@
 # Add these imports to your cli.py file
 import atexit
 import signal
-from typing import Any
-
 from pathlib import Path
-
+from typing import Any
 
 running_processes = {}
 

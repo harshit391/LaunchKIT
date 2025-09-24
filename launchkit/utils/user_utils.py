@@ -2,13 +2,14 @@ import getpass
 import json
 import os
 import shutil
-import sys
 import subprocess
-import yaml
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Tuple, Dict, Any, List
+
 import names
+import yaml
 
 from launchkit.utils.display_utils import (
     boxed_message,
@@ -1984,7 +1985,49 @@ def deploy_redeploy_project(data: dict):
 
         input("\nPress Enter to continue...")
 
+def rename_project(data: Dict[str, Any], folder: Path) -> Tuple[Dict, Path]:
+    """Rename the project folder and update its configuration."""
+    base_folder = get_base_launchkit_folder()
+    project_name = data.get("project_name", "")
+    boxed_message(f"Renaming Project: {project_name}")
 
+    new_folder_path = ""
+
+    while True:
+        new_name = input("Enter the new project name: ").strip()
+        if not new_name:
+            status_message("Project name cannot be empty.", False)
+            continue
+
+        new_folder_path = base_folder / new_name
+        if new_folder_path.exists():
+            status_message(f"A project named '{new_name}' already exists. Please choose another name.", False)
+        else:
+            break
+
+    confirm = Question(f"Are you sure you want to rename '{project_name}' to '{new_name}'?", ["Yes", "No"]).ask()
+    if confirm != "Yes":
+        status_message("Rename operation cancelled.")
+        return data, folder # Return original data if cancelled
+
+    try:
+        # Move/rename the folder
+        shutil.move(str(folder), str(new_folder_path))
+        arrow_message(f"Project folder renamed to: {new_folder_path}")
+
+        # Update the data dictionary
+        data["project_name"] = new_name
+        data["selected_folder"] = str(new_folder_path)
+
+        # Save the updated data to the *new* folder location
+        add_data_to_db(data, str(new_folder_path))
+
+        status_message(f"Project '{project_name}' successfully renamed to '{new_name}'!")
+        return data, new_folder_path
+
+    except Exception as e:
+        status_message(f"An error occurred during renaming: {e}", False)
+        return data, folder
 
 
 # =============================================================================
@@ -3912,41 +3955,41 @@ def load_existing_project(project_name):
 
 def welcome_user():
     """Handles user onboarding with project selection (start new or continue)."""
-    # Check if there are existing projects
-    existing_projects = list_existing_projects()
+    while True:  # Loop to allow returning to this menu
+        existing_projects = list_existing_projects()
 
-    if existing_projects:
-        # Ask user: start new or continue existing
-        project_action = Question(
-            "What would you like to do?",
-            ["Start New Project", "Continue Existing Project", "Docker / Kubernetes"]
-        ).ask()
+        main_options = ["Start New Project", "Docker / Kubernetes", "Exit"]
+        prompt = "What would you like to do?"
+
+        if existing_projects:
+            main_options = ["Start New Project", "Continue Existing Project", "Docker / Kubernetes", "Exit"]
+        else:
+            prompt = "No existing projects found. Let's get started!"
+
+        project_action = Question(prompt, main_options).ask()
 
         if "Continue" in project_action:
-            # Show existing projects
             project_choice = Question(
                 "Select a project to continue:",
                 existing_projects
             ).ask()
-
             if project_choice in existing_projects:
                 return load_existing_project(project_choice)
             else:
                 status_message("Invalid project selection.", False)
-                sys.exit(1)
+                continue
+
         elif "Start" in project_action:
-            # Start new project
             return create_new_project()
+
         elif "Docker" in project_action:
-            # Handle Docker/Kubernetes operations
-            return handle_docker_kubernetes_operations()
-        else:
-            status_message("Invalid project selection.", False)
-            return None
-    else:
-        # No existing projects, start new
-        rich_message("No existing projects found. Let's create your first project!", False)
-        return create_new_project()
+            handle_docker_kubernetes_operations()
+            # After the function returns, continue the loop to show the main menu again.
+            continue
+
+        elif "Exit" in project_action:
+            exiting_program()
+            sys.exit(0)
 
 
 def add_data_to_db(data: dict, selected_folder: str):

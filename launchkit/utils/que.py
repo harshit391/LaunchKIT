@@ -1,4 +1,4 @@
-from  questionary import select, Style
+from questionary import select, Style
 
 from launchkit.utils.display_utils import rich_message
 

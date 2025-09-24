@@ -1,9 +1,10 @@
 import os
-import tempfile
 import platform
+import tempfile
 from pathlib import Path
-from launchkit.utils.que import Question
+
 from launchkit.utils.display_utils import status_message, boxed_message
+from launchkit.utils.que import Question
 
 
 class LearnerModeManager:

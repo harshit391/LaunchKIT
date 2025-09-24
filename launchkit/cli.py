@@ -1,16 +1,14 @@
 from launchkit.modules.project_management import handle_existing_project, setup_new_project
 from launchkit.modules.server_management import cleanup_processes
-from launchkit.nlp.main import nlp_main
-from launchkit.utils.display_utils import progress_message, rich_message, status_message
-from launchkit.utils.que import Question
-from launchkit.utils.user_utils import handle_user_data
+from launchkit.utils.display_utils import rich_message, status_message
 from launchkit.utils.learner_utils import setup_learner_mode, is_learner_mode_on
+from launchkit.utils.user_utils import handle_user_data
 
 
 def main():
+    """The main entry point for the LaunchKIT CLI application."""
     try:
-        progress_message("Launching LaunchKIT... 🚀")
-
+        # Display welcome message once
         print("\n\n")
         msg = "Welcome to LaunchKIT!"
         width = len(msg) + 6
@@ -18,48 +16,49 @@ def main():
         print("║" + msg.center(width) + "║")
         print("╚" + "═" * width + "╝\n")
 
-        user_choice = Question("How do you want to Proceed?", ["Command Line", "Options"]).ask()
-
-        # Handle learner mode setup right after choice - this is global for all LaunchKIT usage
+        # Handle learner mode setup
         if not is_learner_mode_on():
-            # Check if learner mode file exists - if not, this is first time for learner mode
             setup_learner_mode(is_first_time=True)
         else:
-            # Returning user with learner mode - ask if they want to continue or disable
             setup_learner_mode(is_first_time=False)
 
-        if user_choice == "Command Line":
-            nlp_main()
-        else:
+        # Main application loop
+        while True:
+            # welcome_user() now handles the main menu loop
             data, folder = handle_user_data()
 
-            # Check if project is already configured
-            if data.get("setup_complete", False):
-                handle_existing_project(data, folder)
-            else:
-                setup_new_project(data, folder)
+            # If user selects a project, data and folder will be returned
+            if data and folder:
+                if data.get("setup_complete", False):
+                    # For existing projects, enter the project-specific menu
+                    handle_existing_project(data, folder)
+                else:
+                    # For new projects, start the setup process
+                    setup_new_project(data, folder)
+
+            # After a project session ends (or if the user exits the selection),
+            # the loop continues, showing the main menu again.
+            # If welcome_user() returns (None, None), it means the user chose to exit the app.
+            if not data and not folder:
+                break  # Exit the while loop and the application
 
     except KeyboardInterrupt:
         cleanup_processes()
-        rich_message("\nGoodbye! 👋", False)
+        rich_message("\nGoodbye! 👋", style="bold green")
     except Exception as e:
-        status_message(f"Unexpected error: {e}", False)
+        status_message(f"An unexpected error occurred: {e}", False)
         cleanup_processes()
 
 
 def main_for_cli():
     try:
-        # Handle learner mode for CLI users as well
         if not is_learner_mode_on():
-            # First time for learner mode - show prompt
             setup_learner_mode(is_first_time=True)
         else:
-            # Returning user with learner mode - ask if they want to continue or disable
             setup_learner_mode(is_first_time=False)
 
         data, folder = handle_user_data()
 
-        # Check if project is already configured
         if data.get("setup_complete", False):
             handle_existing_project(data, folder)
         else:
