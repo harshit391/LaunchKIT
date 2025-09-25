@@ -1,4 +1,3 @@
-import os
 import shutil
 import subprocess
 import sys
@@ -324,23 +323,44 @@ def scaffold_angular(folder: Path) -> bool:
     """Scaffold an Angular project."""
     arrow_message("Scaffolding Angular frontend...")
     try:
-        # The Angular CLI creates a sub-folder, so we scaffold in a temp name and move contents
+        # The Angular CLI creates a sub-folder, so we scaffold in a temp directory
+        # and move the contents to the target folder to avoid potential conflicts.
         temp_proj_name = "angular_temp_project"
-        if not _run_command(f"npx -p @angular/cli@latest ng new {temp_proj_name} --directory . --routing --style=css --standalone=false --skip-git", folder):
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Run 'ng new' inside the temporary directory. It will create a sub-folder with the project name.
+            # We have removed the problematic '--directory .' flag.
+            if not _run_command(
+                    f"npx -p @angular/cli@latest ng new {temp_proj_name} --routing --style=css --standalone=false --skip-git",
+                    temp_path
+            ):
+                return False
+
+            status_message("Angular project initialized in a temporary location.")
+
+            # Define the source path of the newly generated project files
+            source_dir = temp_path / temp_proj_name
+
+            # Move the contents from the generated sub-folder to the actual target folder
+            arrow_message(f"Moving project files to {folder}...")
+            for item in source_dir.iterdir():
+                shutil.move(str(item), str(folder / item.name))
+
+            status_message("Project files moved successfully.")
+
+        # Now that files are in place, run npm install in the final destination folder
+        if not _run_command("npm install", folder):
             return False
 
-        status_message("Angular project initialized.")
-        if not _run_command("npm install", folder):
-             return False
-
-        # Angular comes with Karma/Jasmine pre-configured.
+        # Angular comes with Karma/Jasmine pre-configured for testing.
         arrow_message("Angular project includes Karma and Jasmine for testing.")
         status_message("Angular project scaffolded successfully.")
         return True
     except Exception as e:
         status_message(f"Failed to scaffold Angular frontend: {e}", False)
         return False
-
 
 def scaffold_svelte_vite(folder: Path) -> bool:
     """Scaffold a Svelte project using Vite."""

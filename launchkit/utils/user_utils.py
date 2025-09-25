@@ -18,6 +18,7 @@ from launchkit.utils.display_utils import (
     status_message,
     exiting_program,
 )
+
 from launchkit.utils.que import Question
 
 # Possible user choices for identity
@@ -278,10 +279,6 @@ def check_kubernetes_resources(
 
     return k8s_status
 
-
-# =============================================================================
-# MISSING FUNCTION IMPLEMENTATIONS FOR USER_UTILS.PY
-# =============================================================================
 
 def inspect_docker_resource():
     """Inspect Docker containers or images with detailed information."""
@@ -1225,9 +1222,6 @@ def kubernetes_cluster_info():
 
     input("\nPress Enter to continue...")
 
-# =============================================================================
-# PROJECT SPECIFIC FUNCTIONS
-# =============================================================================
 
 def manage_project_images(data: dict):
     """Manage Docker images for a specific project."""
@@ -2023,18 +2017,15 @@ def rename_project(data: Dict[str, Any], folder: Path) -> Tuple[Dict, Path]:
         add_data_to_db(data, str(new_folder_path))
 
         status_message(f"Project '{project_name}' successfully renamed to '{new_name}'!")
-        boxed_message("Please Restart the Application to Continue with changes!")
-        exiting_program()
-        sys.exit(0)
+
+        return data, new_folder_path
 
     except Exception as e:
         status_message(f"An error occurred during renaming: {e}", False)
         return data, folder
 
 
-# =============================================================================
-# UPDATED FUNCTION IMPLEMENTATIONS
-# =============================================================================
+
 
 def global_docker_management():
     """Handle global Docker management operations with complete implementations."""
@@ -2311,8 +2302,6 @@ def project_specific_container_management(data: dict):
 
         input("\nPress Enter to continue...")
 
-
-# Continue with all the remaining original functions...
 def read_docker_configuration(project_folder: Path):
     """Read and analyze existing Docker configuration files."""
     docker_info = {}

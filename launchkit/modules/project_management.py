@@ -7,7 +7,7 @@ from launchkit.modules.addon_management import choose_addons, apply_addons, add_
 from launchkit.modules.server_management import running_processes, run_dev_server, server_management_menu, \
     cleanup_processes
 from launchkit.utils.display_utils import *
-from launchkit.utils.enum_utils import PROJECT_TYPES, STACK_CATALOG, SCAFFOLDERS
+from launchkit.utils.enum_utils import STACK_CONFIG
 from launchkit.utils.que import Question
 from launchkit.utils.scaffold_utils import scaffold_project_with_cleanup, cleanup_failed_scaffold, \
     scaffold_project_complete_delete
@@ -23,51 +23,51 @@ from launchkit.utils.stack_utils import (
 )
 
 def choose_project_type() -> Any | None:
-    # Add "Cancel" to the list of choices
-    project_choices = PROJECT_TYPES + ["Cancel"]
+    # Dynamically get project types from the new STACK_CONFIG
+    project_types = sorted(list(set(info['project_type'] for info in STACK_CONFIG.values())))
+    project_choices = project_types + ["Cancel"]
     project_type = Question("Select your project type:", project_choices).ask()
 
-    # Handle the "Cancel" choice for a graceful exit
     if project_type == "Cancel":
         return None
 
-    if project_type not in PROJECT_TYPES:
-        return None
     return project_type
 
 
 def choose_stack(project_type: str) -> str | None:
-    stacks = STACK_CATALOG.get(project_type, [])
+    # Get available stacks for the chosen project type from STACK_CONFIG
+    stacks = [
+        name for name, config in STACK_CONFIG.items()
+        if config['project_type'] == project_type
+    ]
     if not stacks:
         status_message("No stacks configured for this project type.", False)
         return None
 
-    # Add "Cancel" to the list of choices
-    stack_choices = stacks + ["Cancel"]
+    stack_choices = sorted(stacks) + ["Cancel"]
     stack = Question(f"Select a tech stack for '{project_type}':", stack_choices).ask()
 
-    # Handle the "Cancel" choice for a graceful exit
     if stack == "Cancel":
         return None
 
-    if stack not in stacks:
-        return None
     return stack
 
 
 def run_scaffolding(stack: str, folder: Path):
-    scaffold = SCAFFOLDERS.get(stack)
-    if not scaffold:
+    # Get the scaffolder function directly from STACK_CONFIG
+    scaffold_function = STACK_CONFIG.get(stack, {}).get('scaffolder')
+
+    if not scaffold_function:
         status_message(f"No scaffolder registered for '{stack}'.", False)
-        scaffold_project_with_cleanup(scaffold, folder)
+        cleanup_failed_scaffold(folder)
         exiting_program()
         sys.exit(1)
 
-    if not scaffold(folder):
-        scaffold_project_with_cleanup(scaffold, folder)
+    # Use the wrapper for cleanup on failure
+    if not scaffold_project_with_cleanup(scaffold_function, folder):
+        status_message(f"Scaffolding for '{stack}' failed. Project has been cleaned up.", False)
         exiting_program()
         sys.exit(1)
-
 
 def create_project_summary(data: dict, folder: Path):
     """Create a project summary file with all configurations."""
@@ -696,28 +696,29 @@ def run_tests(data, folder):
 
             else:
                 # Regular Node.js/React tests
-                if (folder / "jest.config.json").exists():
-                    subprocess.run(["npm", "test", "--", "--watchAll=false"],
-                                            cwd=folder, shell=True)
+                cmd = None
+                if (folder / "jest.config.json").exists() or (folder / "package.json").exists():
+                    cmd = ["npm", "test", "--", "--watchAll=false"]
                 elif (folder / "vitest.config.js").exists():
-                    subprocess.run(["npm", "run", "test"], cwd=folder, shell=True)
-                elif (folder / "package.json").exists():
-                    subprocess.run(["npm", "test", "--", "--watchAll=false"],
-                                            cwd=folder, shell=True)
+                    cmd = ["npm", "run", "test"]
                 else:
                     status_message("No test configuration found", False)
                     return
 
-                # if result.returncode == 0:
-                #     status_message("All tests passed!", True)
-                #     if result.stdout:
-                #         display_test_output(result.stdout)
-                # else:
-                #     status_message("Some tests failed!", False)
-                #     print(result.stdout)
-                #     if result.stderr:
-                #         status_message("Error output:", False)
-                #         arrow_message(result.stderr.strip())
+                result = subprocess.run(cmd, cwd=folder, capture_output=True, text=True, shell=True)
+
+                if result.returncode == 0:
+                    status_message("All tests passed!", True)
+                    if result.stdout:
+                        display_test_output(result.stdout)
+                    else:
+                        status_message("Some tests failed!", False)
+                        # Print both stdout and stderr for comprehensive error reporting
+                        if result.stdout:
+                            print(result.stdout)
+                        if result.stderr:
+                            status_message("Error output:", False)
+                            arrow_message(result.stderr.strip())
 
         elif is_python_based_stack(stack):
             run_python_tests(folder)
