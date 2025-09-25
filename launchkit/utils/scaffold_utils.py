@@ -4,7 +4,7 @@ import subprocess
 import sys
 import json
 from pathlib import Path
-
+import tempfile
 from launchkit.core.templates import *
 from launchkit.utils.display_utils import (
     arrow_message,
@@ -393,26 +393,34 @@ def scaffold_sveltekit(folder: Path) -> bool:
 
 
 def scaffold_nextjs_static(folder: Path) -> bool:
-    """Scaffold Next.jS Static Project with testing setup."""
+    """Scaffold Next.js Static Project with testing setup."""
     arrow_message("Scaffolding Next.js (Static UI)...")
 
     try:
-        command_name = "move" if os.name == "nt" else "mv"
+        # 1. Create a temporary directory to safely run create-next-app
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            status_message(f"Created temporary directory for scaffolding.")
 
-        if not _run_command(f"{command_name} data.json ..", folder):
-            return False
+            # 2. Run create-next-app inside the temporary directory
+            if not _run_command("npx create-next-app@latest .", temp_path):
+                status_message("Failed to initialize Next.js in temporary directory.", False)
+                return False
 
-        _run_command(f"{command_name} launchkit_backup ..", folder)
+            status_message("Next.js initialized successfully in temporary directory.")
 
-        if not _run_command(
-                f"npx create-next-app@latest .",
-                folder):
-            return False
+            # 3. Copy the generated files to the actual project folder
+            # This avoids overwriting essential files like data.json or launchkit_backups
+            arrow_message(f"Copying project files to {folder}...")
+            for item in temp_path.iterdir():
+                dest_path = folder / item.name
+                if not dest_path.exists():
+                    # Move the item from the temp folder to the final destination
+                    shutil.move(str(item), str(dest_path))
 
-        if not _run_command(f"{command_name} ..\\data.json .", folder):
-            return False
+            status_message("Project files copied successfully.")
 
-        _run_command(f"{command_name}  ..\\launchkit_backup .", folder)
+        # The temporary directory is automatically deleted upon exiting the 'with' block
 
         # Install testing dependencies
         if not _install_testing_deps_node(folder, "jest"):
