@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Tuple
 from launchkit.utils.display_utils import *
 from launchkit.utils.que import Question
 from launchkit.utils.user_utils import add_data_to_db
+from launchkit.utils.stack_utils import *
 
 
 def _run_command(command: str, cwd: Path = None, capture_output: bool = True, timeout: int = 300) -> Tuple[bool, str, str]:
@@ -25,27 +26,6 @@ def _run_command(command: str, cwd: Path = None, capture_output: bool = True, ti
         return False, "", f"Command timed out after {timeout} seconds"
     except Exception as e:
         return False, "", str(e)
-
-
-def _is_node_based_stack(stack: str) -> bool:
-    """Check if stack is Node.js/React based."""
-    node_indicators = [
-        "React (Vite)", "React (Next.js", "Node.js (Express)",
-        "MERN", "PERN", "Flask + React", "OpenAI Demo"
-    ]
-    return any(indicator in stack for indicator in node_indicators)
-
-
-def _is_python_based_stack(stack: str) -> bool:
-    """Check if stack is Python/Flask based."""
-    python_indicators = ["Flask (Python)", "Flask + React"]
-    return any(indicator in stack for indicator in python_indicators)
-
-
-def _is_fullstack_stack(stack: str) -> bool:
-    """Check if stack is a fullstack application."""
-    fullstack_indicators = ["MERN", "PERN", "Flask + React", "OpenAI Demo"]
-    return any(indicator in stack for indicator in fullstack_indicators)
 
 
 def create_flask_production_config(folder: Path):
@@ -457,9 +437,9 @@ def show_manual_deployment_guide(data: Dict[str, Any]):
 
     boxed_message(f"Manual Deployment Guide for {project_name}")
 
-    if _is_node_based_stack(stack):
+    if is_node_based_stack(stack):
         _show_node_deployment_guide(stack)
-    elif _is_python_based_stack(stack):
+    elif is_python_based_stack(stack):
         _show_python_deployment_guide(stack)
     else:
         _show_generic_deployment_guide(stack)
@@ -473,11 +453,11 @@ def update_dependencies(data: Dict[str, Any], folder: Path):
     try:
         progress_message(f"Updating dependencies for {project_name}...")
 
-        if _is_fullstack_stack(stack):
+        if is_fullstack_stack(stack):
             _update_fullstack_dependencies(folder, stack)
-        elif _is_node_based_stack(stack):
+        elif is_node_based_stack(stack):
             _update_node_dependencies(folder)
-        elif _is_python_based_stack(stack):
+        elif is_python_based_stack(stack):
             _update_python_dependencies(folder)
         else:
             status_message(f"Dependency update not configured for {stack}", False)
@@ -615,7 +595,7 @@ def _show_service_urls(compose_path: Path, stack: str):
         print("Application URLs:")
 
         # Main application
-        main_port = "3000" if _is_node_based_stack(stack) else "5000"
+        main_port = "3000" if is_node_based_stack(stack) else "5000"
         print(f"- Main application: http://localhost:{main_port}")
 
         # Check for specific services

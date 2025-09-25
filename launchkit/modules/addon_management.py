@@ -6,6 +6,7 @@ from typing import List, Dict, Any
 from launchkit.utils.display_utils import *
 from launchkit.utils.que import Question
 from launchkit.utils.user_utils import add_data_to_db
+from launchkit.utils.stack_utils import *
 
 
 def _run_npm_command(folder: Path, command: List[str], description: str = ""):
@@ -132,36 +133,6 @@ def choose_addons() -> List[str]:
 
     return chosen
 
-
-def _is_node_based_stack(stack: str) -> bool:
-    """Check if stack is Node.js/React based."""
-    node_indicators = [
-        "React (Vite)", "React (Next.js", "Node.js (Express)",
-        "MERN", "PERN", "Flask + React", "OpenAI Demo"
-    ]
-    return any(indicator in stack for indicator in node_indicators)
-
-
-def _is_python_based_stack(stack: str) -> bool:
-    """Check if stack is Python/Flask based."""
-    python_indicators = ["Flask (Python)", "Flask + React"]
-    return any(indicator in stack for indicator in python_indicators)
-
-
-def _is_react_based_stack(stack: str) -> bool:
-    """Check if stack includes React."""
-    react_indicators = [
-        "React (Vite)", "React (Next.js", "MERN", "PERN",
-        "Flask + React", "OpenAI Demo"
-    ]
-    return any(indicator in stack for indicator in react_indicators)
-
-
-def _is_next_js_stack(stack: str) -> bool:
-    """Check if stack is Next.js based."""
-    return "Next.js" in stack
-
-
 def enable_ci(folder: Path, stack: str):
     """Enhanced CI configuration with more options."""
     arrow_message("Adding GitHub Actions CI...")
@@ -174,7 +145,7 @@ def enable_ci(folder: Path, stack: str):
     include_deploy = Question("Include deployment step in CI?", ["Yes", "No"]).ask()
 
     # Node.js based workflow (React, MERN, PERN, Next.js, Express, OpenAI Demo)
-    if _is_node_based_stack(stack):
+    if is_python_based_stack(stack):
         workflow = f"""name: Build & Test
 on: 
   push:
@@ -200,7 +171,7 @@ jobs:
 """
 
         if include_build == "Yes":
-            if _is_next_js_stack(stack):
+            if is_next_js_stack(stack):
                 workflow += """      
       - name: Build Next.js application
         run: npm run build
@@ -225,13 +196,13 @@ jobs:
           echo "Deploying to staging environment"
           # Add your deployment commands here
 """
-            if _is_next_js_stack(stack):
+            if is_next_js_stack(stack):
                 deploy_step += """          # For Next.js, consider using Vercel CLI or other deployment tools
 """
             workflow += deploy_step
 
     # Python based workflow (Flask)
-    elif _is_python_based_stack(stack):
+    elif is_python_based_stack(stack):
         workflow = f"""name: Build & Test
 on: 
   push:
@@ -365,7 +336,7 @@ def enable_lint_format(folder: Path, stack: str):
     """Enhanced linting and formatting configuration with dependency installation."""
     arrow_message("Adding Linting & Formatter...")
 
-    if _is_node_based_stack(stack):
+    if is_python_based_stack(stack):
         # Define dependencies
         dev_dependencies = ["eslint", "prettier"]
         scripts = {
@@ -375,7 +346,7 @@ def enable_lint_format(folder: Path, stack: str):
         }
 
         # Add React-specific dependencies
-        if _is_react_based_stack(stack):
+        if is_react_based_stack(stack):
             dev_dependencies.extend([
                 "eslint-plugin-react",
                 "eslint-plugin-react-hooks",
@@ -384,7 +355,7 @@ def enable_lint_format(folder: Path, stack: str):
             ])
 
         # Add Next.js specific dependencies
-        if _is_next_js_stack(stack):
+        if is_next_js_stack(stack):
             dev_dependencies.append("eslint-config-next")
 
         # Install dependencies
@@ -413,13 +384,13 @@ def enable_lint_format(folder: Path, stack: str):
             }
 
             # Add React-specific configuration
-            if _is_react_based_stack(stack):
+            if is_react_based_stack(stack):
                 eslint_config["extends"].extend(["plugin:react/recommended", "plugin:react-hooks/recommended"])
                 eslint_config["plugins"] = ["react", "react-hooks"]
                 eslint_config["settings"] = {"react": {"version": "detect"}}
 
                 # Next.js specific rules
-                if _is_next_js_stack(stack):
+                if is_next_js_stack(stack):
                     eslint_config["extends"].append("next/core-web-vitals")
 
             (folder / ".eslintrc.json").write_text(json.dumps(eslint_config, indent=2))
@@ -446,7 +417,7 @@ def enable_lint_format(folder: Path, stack: str):
             }
             (vscode_dir / "settings.json").write_text(json.dumps(vscode_settings, indent=2))
 
-    elif _is_python_based_stack(stack):
+    elif is_python_based_stack(stack):
         # Install Python linting and formatting tools
         python_packages = ["black", "isort", "flake8"]
 
@@ -515,10 +486,10 @@ def enable_tests(folder: Path, stack: str):
     tests_dir = folder / "tests"
     tests_dir.mkdir(exist_ok=True)
 
-    if _is_node_based_stack(stack):
+    if is_python_based_stack(stack):
         # Ask for testing framework
         test_frameworks = ["Jest (Don't use it for React Vite)", "Vitest"]
-        if _is_next_js_stack(stack):
+        if is_next_js_stack(stack):
             test_frameworks = ["Jest", "Vitest", "Jest + React Testing Library"]
 
         test_framework = Question("Select testing framework:", test_frameworks + ["Mocha + Chai"]).ask()
@@ -532,7 +503,7 @@ def enable_tests(folder: Path, stack: str):
                 "test:coverage": "jest --coverage"
             }
 
-            if _is_react_based_stack(stack):
+            if is_react_based_stack(stack):
                 dev_dependencies.extend([
                     "@testing-library/react",
                     "@testing-library/jest-dom",
@@ -555,7 +526,7 @@ def enable_tests(folder: Path, stack: str):
                     "testMatch": ["**/tests/**/*.test.js", "**/?(*.)+(spec|test).js"]
                 }
 
-                if _is_react_based_stack(stack):
+                if is_react_based_stack(stack):
                     jest_config["testEnvironment"] = "jsdom"
                     jest_config["setupFilesAfterEnv"] = ["<rootDir>/tests/setup.js"]
 
@@ -565,7 +536,7 @@ def enable_tests(folder: Path, stack: str):
                     (tests_dir / "setup.js").write_text(setup_content)
 
                     # Create sample React test
-                    if _is_next_js_stack(stack):
+                    if is_next_js_stack(stack):
                         sample_test = """import { render, screen } from '@testing-library/react';
 import Home from '../pages/index';
 
@@ -607,7 +578,7 @@ test('adds 1 + 2 to equal 3', () => {
                 "test:coverage": "vitest --coverage"
             }
 
-            if _is_react_based_stack(stack):
+            if is_react_based_stack(stack):
                 dev_dependencies.extend([
                     "@testing-library/react",
                     "@testing-library/jest-dom",
@@ -667,7 +638,7 @@ describe('Sample Test', () => {
 """
                 (tests_dir / "sample.test.js").write_text(sample_test)
 
-    elif _is_python_based_stack(stack):
+    elif is_python_based_stack(stack):
         # Ask for Python testing framework
         test_framework = Question("Select testing framework:",
                                   ["pytest", "unittest", "pytest + FastAPI"]).ask()
@@ -759,8 +730,8 @@ def enable_docker(folder: Path, stack: str):
     dockerfile_content = ""
     docker_compose_content = ""
 
-    if _is_node_based_stack(stack):
-        if _is_next_js_stack(stack):
+    if is_python_based_stack(stack):
+        if is_next_js_stack(stack):
             dockerfile_content = """FROM node:18-alpine AS base
 
 # Install dependencies only when needed
@@ -938,7 +909,7 @@ volumes:
   redis_data:
 """
 
-    elif _is_python_based_stack(stack):
+    elif is_python_based_stack(stack):
         dockerfile_content = """FROM python:3.11-slim
 
 WORKDIR /app
@@ -1459,7 +1430,7 @@ def create_docker_scripts(folder: Path, stack: str):
     scripts_dir.mkdir(exist_ok=True)
 
     # Determine application URL based on stack
-    app_url = "http://localhost:3000" if _is_node_based_stack(stack) else "http://localhost:5000"
+    app_url = "http://localhost:3000" if is_python_based_stack(stack) else "http://localhost:5000"
 
     # Development script
     dev_script = f"""#!/bin/bash
@@ -1540,7 +1511,7 @@ def create_additional_docker_configs(folder: Path, stack: str):
     """Create additional configuration files for Docker setup."""
 
     # Create nginx.conf for Node.js apps with nginx service
-    if _is_node_based_stack(stack):
+    if is_python_based_stack(stack):
         nginx_config = """events {
     worker_connections 1024;
 }
@@ -1627,7 +1598,7 @@ print('Database initialized successfully');
         (folder / "mongo-init.js").write_text(mongo_init)
 
     # Create docker-compose production override
-    if _is_python_based_stack(stack):
+    if is_python_based_stack(stack):
         prod_compose = """version: '3.8'
 
 services:
@@ -1691,7 +1662,7 @@ def enable_kubernetes(folder: Path, stack: str):
 
     k8s_dir = folder / "k8s"
     app_name = folder.name.lower().replace("_", "-")
-    app_port = "3000" if _is_node_based_stack(stack) else "5000"
+    app_port = "3000" if is_python_based_stack(stack) else "5000"
 
     # Create Kustomize structure
     (k8s_dir / "base").mkdir(parents=True, exist_ok=True)
@@ -1893,7 +1864,7 @@ spec:
 """
         (k8s_dir / "base" / "mongodb.yaml").write_text(mongo_yaml)
 
-    elif "PERN" in stack or _is_python_based_stack(stack):
+    elif "PERN" in stack or is_python_based_stack(stack):
         # PostgreSQL StatefulSet
         postgres_yaml = f"""apiVersion: v1
 kind: Service
@@ -2677,7 +2648,7 @@ def create_helm_chart(folder: Path, stack: str, app_name: str, app_port: str):
 
     # Add extra environment variables based on stack
     extra_env_vars = ""
-    if _is_python_based_stack(stack):
+    if is_python_based_stack(stack):
         extra_env_vars = "  FLASK_ENV: production"
 
     # --- Chart.yaml (no changes) ---
@@ -2874,10 +2845,10 @@ def install_addon_dependencies(folder: Path, stack: str, addon_name: str):
     arrow_message(f"Installing dependencies for {addon_name}...")
 
     if addon_name == "Add Unit Testing Skeleton":
-        if _is_node_based_stack(stack):
+        if is_python_based_stack(stack):
             # Install Jest by default for new projects
             dev_dependencies = ["jest"]
-            if _is_react_based_stack(stack):
+            if is_react_based_stack(stack):
                 dev_dependencies.extend([
                     "@testing-library/react",
                     "@testing-library/jest-dom",
@@ -2896,20 +2867,20 @@ def install_addon_dependencies(folder: Path, stack: str, addon_name: str):
             }
             _update_package_json_scripts(folder, scripts)
 
-        elif _is_python_based_stack(stack):
+        elif is_python_based_stack(stack):
             python_packages = ["pytest", "pytest-cov", "pytest-flask"]
             _run_pip_command(folder, python_packages, "Installing pytest dependencies")
             _update_requirements_txt(folder, python_packages)
 
     elif addon_name == "Add Linting & Formatter":
-        if _is_node_based_stack(stack):
+        if is_python_based_stack(stack):
             dev_dependencies = ["eslint", "prettier"]
-            if _is_react_based_stack(stack):
+            if is_react_based_stack(stack):
                 dev_dependencies.extend([
                     "eslint-plugin-react",
                     "eslint-plugin-react-hooks"
                 ])
-            if _is_next_js_stack(stack):
+            if is_next_js_stack(stack):
                 dev_dependencies.append("eslint-config-next")
 
             _run_npm_command(folder, ["npm", "install", "--save-dev"] + dev_dependencies,
@@ -2923,7 +2894,7 @@ def install_addon_dependencies(folder: Path, stack: str, addon_name: str):
             }
             _update_package_json_scripts(folder, scripts)
 
-        elif _is_python_based_stack(stack):
+        elif is_python_based_stack(stack):
             python_packages = ["black", "isort", "flake8"]
             _run_pip_command(folder, python_packages, "Installing Python linting tools")
             _update_requirements_txt(folder, python_packages)
@@ -2941,7 +2912,7 @@ def get_addon_dependencies(addon_name: str, stack: str) -> Dict[str, List[str]]:
     }
 
     if addon_name == "Add Unit Testing Skeleton":
-        if _is_node_based_stack(stack):
+        if is_python_based_stack(stack):
             dependencies["npm_dev"].extend(["jest"])
             dependencies["scripts"].update({
                 "test": "jest",
@@ -2949,18 +2920,18 @@ def get_addon_dependencies(addon_name: str, stack: str) -> Dict[str, List[str]]:
                 "test:coverage": "jest --coverage"
             })
 
-            if _is_react_based_stack(stack):
+            if is_react_based_stack(stack):
                 dependencies["npm_dev"].extend([
                     "@testing-library/react",
                     "@testing-library/jest-dom",
                     "@testing-library/user-event",
                     "jest-environment-jsdom"
                 ])
-        elif _is_python_based_stack(stack):
+        elif is_python_based_stack(stack):
             dependencies["python"].extend(["pytest", "pytest-cov", "pytest-flask"])
 
     elif addon_name == "Add Linting & Formatter":
-        if _is_node_based_stack(stack):
+        if is_python_based_stack(stack):
             dependencies["npm_dev"].extend(["eslint", "prettier"])
             dependencies["scripts"].update({
                 "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
@@ -2968,15 +2939,15 @@ def get_addon_dependencies(addon_name: str, stack: str) -> Dict[str, List[str]]:
                 "format": "prettier --write ."
             })
 
-            if _is_react_based_stack(stack):
+            if is_react_based_stack(stack):
                 dependencies["npm_dev"].extend([
                     "eslint-plugin-react",
                     "eslint-plugin-react-hooks"
                 ])
-            if _is_next_js_stack(stack):
+            if is_next_js_stack(stack):
                 dependencies["npm_dev"].append("eslint-config-next")
 
-        elif _is_python_based_stack(stack):
+        elif is_python_based_stack(stack):
             dependencies["python"].extend(["black", "isort", "flake8"])
 
     return dependencies

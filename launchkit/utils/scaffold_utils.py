@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 import sys
+import json
 from pathlib import Path
 
 from launchkit.core.templates import *
@@ -1355,4 +1356,141 @@ def scaffold_project_complete_delete(folder: Path) -> bool:
         return False
     except Exception as e:
         status_message(f"❌ Unexpected error during deletion: {e}", False)
+        return False
+
+
+def scaffold_fastify(folder: Path) -> bool:
+    arrow_message("Scaffolding Fastify (Node.js) backend...")
+    try:
+        if not _run_command("npm init -y", folder): return False
+        if not _run_command("npm install fastify @fastify/cors dotenv", folder): return False
+        if not _run_command("npm install --save-dev nodemon jest supertest", folder): return False
+        status_message("Fastify dependencies installed.")
+
+        if not _create_file_safely(folder / "server.js", scaffold_fastify_template["server"]): return False
+        if not _create_file_safely(folder / ".env", scaffold_fastify_template["env"]): return False
+
+        package_path = folder / "package.json"
+        with package_path.open("r") as f:
+            pkg = json.load(f)
+        pkg["scripts"] = {
+            "start": "node server.js",
+            "dev": "nodemon server.js",
+            "test": "jest"
+        }
+        with package_path.open("w") as f:
+            json.dump(pkg, f, indent=2)
+
+        status_message("Fastify backend scaffolded successfully.")
+        return True
+    except Exception as e:
+        status_message(f"Failed to scaffold Fastify backend: {e}", False)
+        return False
+
+def scaffold_nestjs(folder: Path) -> bool:
+    arrow_message("Scaffolding NestJS (TypeScript) backend...")
+    try:
+        # NestJS CLI creates a sub-folder, so we scaffold and then move contents
+        if not _run_command(f"npx @nestjs/cli new . --skip-git --package-manager npm", folder):
+            return False
+
+        status_message("NestJS project initialized and dependencies installed.")
+        arrow_message("NestJS comes with Jest testing pre-configured.")
+        return True
+    except Exception as e:
+        status_message(f"Failed to scaffold NestJS backend: {e}", False)
+        return False
+
+def scaffold_django(folder: Path) -> bool:
+    arrow_message("Scaffolding Django (Python) backend...")
+    try:
+        if not _run_command(f"{sys.executable} -m venv venv", folder): return False
+        status_message("Virtual environment created.")
+        pip_path = "venv\\Scripts\\pip.exe" if sys.platform.startswith("win") else "venv/bin/pip"
+        python_path = "venv\\Scripts\\python.exe" if sys.platform.startswith("win") else "venv/bin/python"
+
+        if not _run_command(f"{pip_path} install django python-dotenv psycopg2-binary gunicorn", folder): return False
+        status_message("Django dependencies installed.")
+
+        project_name = folder.name.lower().replace("-", "_")
+        if not _run_command(f"django-admin startproject {project_name} .", folder): return False
+        status_message("Django project created.")
+
+        if not _create_file_safely(folder / ".env", scaffold_django_template["env"]): return False
+        if not _create_file_safely(folder / "requirements.txt", scaffold_django_template["requirements"]): return False
+
+        status_message("Django backend scaffolded successfully.")
+        return True
+    except Exception as e:
+        status_message(f"Failed to scaffold Django backend: {e}", False)
+        return False
+
+def scaffold_spring_boot(folder: Path) -> bool:
+    arrow_message("Scaffolding Spring Boot (Java) backend...")
+    try:
+        # Create directory structure
+        java_dir = folder / "src" / "main" / "java" / "com" / "example" / "demo"
+        resources_dir = folder / "src" / "main" / "resources"
+        test_dir = folder / "src" / "test" / "java" / "com" / "example" / "demo"
+        java_dir.mkdir(parents=True, exist_ok=True)
+        resources_dir.mkdir(parents=True, exist_ok=True)
+        test_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create files
+        if not _create_file_safely(folder / "pom.xml", scaffold_spring_boot_template["pom_xml"]): return False
+        if not _create_file_safely(java_dir / "DemoApplication.java", scaffold_spring_boot_template["main_app"]): return False
+        if not _create_file_safely(java_dir / "HelloController.java", scaffold_spring_boot_template["controller"]): return False
+        if not _create_file_safely(resources_dir / "application.properties", scaffold_spring_boot_template["properties"]): return False
+
+        status_message("Spring Boot project structure created.")
+        arrow_message("Run './mvnw spring-boot:run' to start the server.")
+        return True
+    except Exception as e:
+        status_message(f"Failed to scaffold Spring Boot backend: {e}", False)
+        return False
+
+def scaffold_ruby_on_rails(folder: Path) -> bool:
+    arrow_message("Scaffolding Ruby on Rails backend...")
+    try:
+        if not _run_command("rails new . --api --database=postgresql", folder): return False
+        status_message("Rails API project created.")
+        if not _create_file_safely(folder / "app" / "controllers" / "api" / "v1" / "greetings_controller.rb", scaffold_ruby_on_rails_template["controller"]): return False
+        if not _create_file_safely(folder / "config" / "routes.rb", scaffold_ruby_on_rails_template["routes"]): return False
+
+        # Create the database
+        if not _run_command("bundle exec rails db:create", folder):
+            status_message("Warning: Could not create database. Please check your PostgreSQL setup.", False)
+
+        status_message("Ruby on Rails backend scaffolded successfully.")
+        return True
+    except Exception as e:
+        status_message(f"Failed to scaffold Rails backend: {e}", False)
+        return False
+
+def scaffold_go_gin(folder: Path) -> bool:
+    arrow_message("Scaffolding Go (Gin) backend...")
+    try:
+        if not _run_command(f"go mod init {folder.name}", folder): return False
+        if not _create_file_safely(folder / "main.go", scaffold_go_gin_template["main_go"]): return False
+        status_message("Go module initialized and main.go created.")
+
+        if not _run_command("go get -u github.com/gin-gonic/gin", folder): return False
+        if not _run_command("go mod tidy", folder): return False
+        status_message("Gin dependency installed.")
+
+        status_message("Go (Gin) backend scaffolded successfully.")
+        return True
+    except Exception as e:
+        status_message(f"Failed to scaffold Go (Gin) backend: {e}", False)
+        return False
+
+def scaffold_aspnet_core(folder: Path) -> bool:
+    arrow_message("Scaffolding ASP.NET Core (C#) backend...")
+    try:
+        if not _run_command("dotnet new webapi -o . --no-https", folder): return False
+        status_message("ASP.NET Core Web API project created.")
+        status_message("Run 'dotnet run' to start the server.")
+        return True
+    except Exception as e:
+        status_message(f"Failed to scaffold ASP.NET Core backend: {e}", False)
         return False

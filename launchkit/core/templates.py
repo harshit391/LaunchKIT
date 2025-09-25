@@ -1,31 +1,3 @@
-scaffold_flask_backend_template = {
-    "app_py": """from flask import Flask
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return 'Hello, Flask!'
-
-@app.route('/health')
-def health():
-    return {'status': 'healthy'}
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
-""",
-
-    "env": """FLASK_ENV=development
-FLASK_DEBUG=True
-""",
-
-    "requirements": """flask
-python-dotenv
-"""}
-
 scaffold_mern_template = {
     "server": """const express = require('express');
 const mongoose = require('mongoose');
@@ -440,3 +412,220 @@ scaffold_custom_runtime_template = {
 ## Notes
 This project was scaffolded with custom runtime instructions.
 """}
+
+scaffold_flask_backend_template = {
+    "app_py": """from flask import Flask
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return 'Hello, Flask!'
+
+@app.route('/health')
+def health():
+    return {'status': 'healthy'}
+
+if __name__ == '__main__':
+    app.run(debug=True, port=os.getenv('PORT', 5000))
+""",
+    "env": """FLASK_ENV=development
+FLASK_DEBUG=True
+PORT=5000
+""",
+    "requirements": """Flask
+python-dotenv
+"""
+}
+
+scaffold_fastify_template = {
+    "server": """const fastify = require('fastify')({ logger: true })
+const cors = require('@fastify/cors')
+require('dotenv').config()
+
+fastify.register(cors, { origin: '*' })
+
+fastify.get('/', async (request, reply) => {
+  return { hello: 'world' }
+})
+
+fastify.get('/health', async (request, reply) => {
+  return { status: 'healthy' }
+})
+
+const start = async () => {
+  try {
+    await fastify.listen({ port: process.env.PORT || 5000, host: '0.0.0.0' })
+  } catch (err) {
+    fastify.log.error(err)
+    process.exit(1)
+  }
+}
+start()
+""",
+    "package": """{
+  "name": "fastify-backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  }
+}
+""",
+    "env": """PORT=5000
+NODE_ENV=development
+"""
+}
+
+scaffold_django_template = {
+    "requirements": """Django
+python-dotenv
+psycopg2-binary
+gunicorn
+""",
+    "env": """DEBUG=True
+SECRET_KEY=your-django-secret-key-in-production
+DATABASE_URL=postgres://user:password@localhost/dbname
+"""
+}
+
+scaffold_spring_boot_template = {
+    "pom_xml": """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-parent</artifactId>
+		<version>3.2.0</version>
+		<relativePath/> </parent>
+	<groupId>com.example</groupId>
+	<artifactId>demo</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+	<name>demo</name>
+	<description>Demo project for Spring Boot</description>
+	<properties>
+		<java.version>17</java.version>
+	</properties>
+	<dependencies>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-web</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+		</plugins>
+	</build>
+</project>
+""",
+    "main_app": """package com.example.demo;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class DemoApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(DemoApplication.class, args);
+	}
+}
+""",
+    "controller": """package com.example.demo;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import java.util.Map;
+
+@RestController
+public class HelloController {
+
+    @GetMapping("/")
+    public Map<String, String> home() {
+        return Map.of("message", "Hello from Spring Boot!");
+    }
+
+    @GetMapping("/health")
+    public Map<String, String> health() {
+        return Map.of("status", "healthy");
+    }
+}
+""",
+    "properties": """server.port=8080
+"""
+}
+
+scaffold_ruby_on_rails_template = {
+    "gemfile": """source 'https://rubygems.org'
+git_source(:github) { |repo_name| "https://github.com/#{repo_name}" }
+
+ruby '3.2.2'
+
+gem 'rails', '~> 7.1.2'
+gem 'pg', '~> 1.5'
+gem 'puma', '~> 6.4'
+gem 'bootsnap', require: false
+gem 'rack-cors'
+
+group :development, :test do
+  gem 'debug', platforms: %i[ mri mingw x64_mingw ]
+end
+
+group :development do
+  gem 'web-console'
+end
+""",
+    "controller": """class Api::V1::GreetingsController < ApplicationController
+  def index
+    render json: { message: 'Hello from Rails!' }
+  end
+end
+""",
+    "routes": """Rails.application.routes.draw do
+  namespace :api do
+    namespace :v1 do
+      get 'greetings', to: 'greetings#index'
+    end
+  end
+end
+"""
+}
+
+scaffold_go_gin_template = {
+    "main_go": """package main
+
+import (
+	"net/http"
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	r := gin.Default()
+	r.GET("/", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Hello from Go (Gin)!",
+		})
+	})
+    r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status": "healthy",
+		})
+	})
+	r.Run(":8080") // listen and serve on 0.0.0.0:8080
+}
+"""
+}

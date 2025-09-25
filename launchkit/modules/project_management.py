@@ -14,7 +14,13 @@ from launchkit.utils.scaffold_utils import scaffold_project_with_cleanup, cleanu
 from launchkit.utils.support_utils import deploy_with_docker, deploy_to_kubernetes, setup_automated_deployment, \
     show_manual_deployment_guide
 from launchkit.utils.user_utils import add_data_to_db, create_backup, rename_project
-
+from launchkit.utils.stack_utils import (
+    is_node_based_stack,
+    is_python_based_stack,
+    is_react_based_stack,
+    is_next_js_stack,
+    is_fullstack_stack
+)
 
 def choose_project_type() -> Any | None:
     # Add "Cancel" to the list of choices
@@ -63,41 +69,6 @@ def run_scaffolding(stack: str, folder: Path):
         sys.exit(1)
 
 
-def _is_node_based_stack(stack: str) -> bool:
-    """Check if stack is Node.js/React based."""
-    node_indicators = [
-        "React (Vite)", "React (Next.js", "Node.js (Express)",
-        "MERN", "PERN", "Flask + React", "OpenAI Demo"
-    ]
-    return any(indicator in stack for indicator in node_indicators)
-
-
-def _is_python_based_stack(stack: str) -> bool:
-    """Check if stack is Python/Flask based."""
-    python_indicators = ["Flask (Python)", "Flask + React"]
-    return any(indicator in stack for indicator in python_indicators)
-
-
-def _is_react_based_stack(stack: str) -> bool:
-    """Check if stack includes React."""
-    react_indicators = [
-        "React (Vite)", "React (Next.js", "MERN", "PERN",
-        "Flask + React", "OpenAI Demo"
-    ]
-    return any(indicator in stack for indicator in react_indicators)
-
-
-def _is_next_js_stack(stack: str) -> bool:
-    """Check if stack is Next.js based."""
-    return "Next.js" in stack
-
-
-def _is_fullstack_stack(stack: str) -> bool:
-    """Check if stack is a fullstack application."""
-    fullstack_indicators = ["MERN", "PERN", "Flask + React", "OpenAI Demo"]
-    return any(indicator in stack for indicator in fullstack_indicators)
-
-
 def create_project_summary(data: dict, folder: Path):
     """Create a project summary file with all configurations."""
     stack = data.get('project_stack', 'N/A')
@@ -129,7 +100,7 @@ def create_project_summary(data: dict, folder: Path):
 """
 
     # Add stack-specific directory structure
-    if _is_next_js_stack(stack):
+    if is_next_js_stack(stack):
         summary_content += """├── pages/              # Next.js pages
     ├── components/         # React components
     """
@@ -148,10 +119,10 @@ def create_project_summary(data: dict, folder: Path):
         summary_content += """├── app/                # Main application module
     ├── assets/             # Static assets
     """
-    elif _is_react_based_stack(stack):
+    elif is_react_based_stack(stack):
         summary_content += """├── components/         # React components
     """
-    elif _is_fullstack_stack(stack):
+    elif is_fullstack_stack(stack):
         if "Flask + React" in stack:
             summary_content += """├── frontend/           # React frontend
 │   ├── src/
@@ -202,13 +173,13 @@ cd """ + str(folder) + """
 """
 
     # Add stack-specific installation commands
-    if _is_node_based_stack(stack) or any(s in stack for s in ["Vue", "Angular", "Svelte"]):
+    if is_node_based_stack(stack) or any(s in stack for s in ["Vue", "Angular", "Svelte"]):
         summary_content += "npm install"
         if "Flask + React" in stack:
             summary_content += """
 cd backend && pip install -r requirements.txt
 cd ../frontend && npm install"""
-    elif _is_python_based_stack(stack):
+    elif is_python_based_stack(stack):
         summary_content += "pip install -r requirements.txt"
 
     summary_content += """
@@ -217,7 +188,7 @@ cd ../frontend && npm install"""
 """
 
     # Add stack-specific dev server commands
-    if _is_next_js_stack(stack) or "Nuxt.js" in stack:
+    if is_next_js_stack(stack) or "Nuxt.js" in stack:
         summary_content += "npm run dev  # Starts on http://localhost:3000"
         # ADDED logic for Vite-based stacks
     elif "Vite" in stack or "SvelteKit" in stack:
@@ -225,7 +196,7 @@ cd ../frontend && npm install"""
         # ADDED logic for Angular
     elif "Angular" in stack:
         summary_content += "npm start    # Starts on http://localhost:4200"
-    elif _is_react_based_stack(stack) and not _is_next_js_stack(stack):
+    elif is_react_based_stack(stack) and not is_next_js_stack(stack):
         summary_content += "npm start   # Starts on http://localhost:3000"
     elif "Node.js (Express)" in stack:
         summary_content += "npm run dev # or node server.js"
@@ -256,7 +227,7 @@ docker-compose up --build
 # Or build and run separately
 docker build -t """ + folder.name.lower() + """ .
 """
-        if _is_node_based_stack(stack):
+        if is_node_based_stack(stack):
             summary_content += "docker run -p 3000:3000 " + folder.name.lower()
         else:
             summary_content += "docker run -p 5000:5000 " + folder.name.lower()
@@ -287,9 +258,9 @@ kubectl port-forward service/app-service 8080:80
 # Run tests
 """
 
-    if _is_node_based_stack(stack):
+    if is_node_based_stack(stack):
         summary_content += "npm test"
-    elif _is_python_based_stack(stack):
+    elif is_python_based_stack(stack):
         summary_content += "pytest  # or python -m unittest"
 
     summary_content += """
@@ -300,9 +271,9 @@ kubectl port-forward service/app-service 8080:80
 # Build production version
 """
 
-    if _is_node_based_stack(stack):
+    if is_node_based_stack(stack):
         summary_content += "npm run build"
-    elif _is_python_based_stack(stack):
+    elif is_python_based_stack(stack):
         summary_content += "# Flask apps are typically run with gunicorn in production"
 
     summary_content += """
@@ -407,12 +378,12 @@ kubectl port-forward service/app-service 8080:80
         summary_content += """5. Add your OpenAI API key to environment variables
 6. Customize prompts and responses for your use case
 """
-    elif _is_fullstack_stack(stack):
+    elif is_fullstack_stack(stack):
         summary_content += """5. Configure database connection
 6. Set up authentication if needed
 7. Plan your API endpoints
 """
-    elif _is_react_based_stack(stack):
+    elif is_react_based_stack(stack):
         summary_content += """5. Plan your component structure
 6. Set up state management if needed (Redux, Zustand, etc.)
 7. Configure routing for multi-page apps
@@ -635,7 +606,7 @@ def build_production(data, folder):
     progress_message(f"Building {project_name} for production...")
 
     try:
-        if _is_node_based_stack(stack):
+        if is_node_based_stack(stack):
             if "Flask + React" in stack:
                 # Build fullstack project
                 progress_message("Building fullstack Flask + React application...")
@@ -653,7 +624,7 @@ def build_production(data, folder):
                 # Flask backend preparation
                 create_flask_production_config(folder / "backend")
 
-            elif _is_next_js_stack(stack):
+            elif is_next_js_stack(stack):
                 progress_message("Building Next.js application...")
                 result = subprocess.run(["npm", "run", "build"], cwd=folder, capture_output=True, text=True)
                 if result.returncode == 0:
@@ -673,7 +644,7 @@ def build_production(data, folder):
                 else:
                     status_message(f"Build failed: {result.stderr}", False)
 
-        elif _is_python_based_stack(stack):
+        elif is_python_based_stack(stack):
             progress_message("Preparing Flask for production...")
             create_flask_production_config(folder)
 
@@ -702,7 +673,7 @@ def run_tests(data, folder):
     progress_message(f"Running tests for {project_name}...")
 
     try:
-        if _is_node_based_stack(stack):
+        if is_node_based_stack(stack):
             if "Flask + React" in stack:
                 # Run tests for both frontend and backend
                 progress_message("Running fullstack tests...")
@@ -748,7 +719,7 @@ def run_tests(data, folder):
                 #         status_message("Error output:", False)
                 #         arrow_message(result.stderr.strip())
 
-        elif _is_python_based_stack(stack):
+        elif is_python_based_stack(stack):
             run_python_tests(folder)
 
         else:
@@ -797,7 +768,7 @@ def update_dependencies(data, folder):
     progress_message("Updating dependencies...")
 
     try:
-        if _is_node_based_stack(stack):
+        if is_node_based_stack(stack):
             if "Flask + React" in stack:
                 # Update both frontend and backend
                 progress_message("Updating fullstack dependencies...")
@@ -830,7 +801,7 @@ def update_dependencies(data, folder):
                 else:
                     status_message(f"npm update failed: {result.stderr}", False)
 
-        elif _is_python_based_stack(stack):
+        elif is_python_based_stack(stack):
             update_python_dependencies(folder)
 
         else:
@@ -1034,11 +1005,11 @@ def deploy_app(data):
         deploy_options.append("Setup Automated Deployment")
 
     # Add stack-specific deployment options
-    if _is_next_js_stack(stack):
+    if is_next_js_stack(stack):
         deploy_options.insert(1, "Deploy to Vercel (Recommended)")
     elif "Flask" in stack:
         deploy_options.insert(1, "Deploy to Heroku/Railway")
-    elif _is_node_based_stack(stack):
+    elif is_node_based_stack(stack):
         deploy_options.insert(1, "Deploy to Netlify/Vercel")
 
     # Add the "Back to Main Menu" option
@@ -1070,7 +1041,7 @@ def show_vercel_deployment_guide(data):
 
     boxed_message("Vercel Deployment Guide")
 
-    if _is_next_js_stack(stack):
+    if is_next_js_stack(stack):
         arrow_message("Next.js apps are optimized for Vercel deployment")
     else:
         arrow_message("React apps can be deployed to Vercel easily")
@@ -1081,7 +1052,7 @@ def show_vercel_deployment_guide(data):
     arrow_message("3. Deploy: vercel --prod")
     arrow_message("4. Follow the prompts to configure your deployment")
 
-    if _is_next_js_stack(stack):
+    if is_next_js_stack(stack):
         arrow_message("5. Vercel will auto-detect Next.js and configure optimally")
 
     rich_message("Alternative: GitHub Integration", False)
@@ -1106,12 +1077,12 @@ def show_heroku_deployment_guide(data):
     arrow_message("3. git add . && git commit -m 'Deploy to Heroku'")
     arrow_message("4. git push heroku main")
 
-    if _is_python_based_stack(stack):
+    if is_python_based_stack(stack):
         rich_message("Flask-specific:", False)
         arrow_message("• Create Procfile: web: gunicorn app:app")
         arrow_message("• Ensure requirements.txt is up to date")
         arrow_message("• Set environment variables: heroku config:set KEY=value")
-    elif _is_node_based_stack(stack):
+    elif is_node_based_stack(stack):
         rich_message("Node.js-specific:", False)
         arrow_message("• Ensure 'start' script in package.json")
         arrow_message("• Set PORT environment variable usage")

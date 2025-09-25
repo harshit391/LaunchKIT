@@ -679,9 +679,35 @@ def detect_server_config(folder: Path, stack: str) -> dict:
         elif "Angular" in stack:
             config['command'] = ["npm", "start"]  # Angular CLI uses 'ng serve' via this script
             config['url'] = 'http://localhost:4200'
+        elif "Fastify" in stack or "Node.js (Express)" in stack:
+            config['command'] = ["npm", "run", "dev"]
+            config['url'] = 'http://localhost:5000'
+        elif "NestJS" in stack:
+            config['command'] = ["npm", "run", "start:dev"]
+            config['url'] = 'http://localhost:3000'
+        elif "Flask" in stack and "React" not in stack:
+            config['command'] = ["flask", "run", "--debug"]
+            config['env_vars'] = {"FLASK_ENV": "development", "FLASK_DEBUG": "1"}
+            config['url'] = 'http://localhost:5000'
+        elif "Django" in stack:
+            config['command'] = ["python", "manage.py", "runserver"]
+            config['url'] = 'http://localhost:8000'
+        elif "Spring Boot" in stack:
+            run_command = "./mvnw" if (folder / "mvnw").exists() else "mvn"
+            config['command'] = [run_command, "spring-boot:run"]
+            config['url'] = 'http://localhost:8080'
+        elif "Ruby on Rails" in stack:
+            config['command'] = ["bin/rails", "server"]
+            config['url'] = 'http://localhost:3000'
+        elif "Go (Gin/Fiber)" in stack:
+            config['command'] = ["go", "run", "."]
+            config['url'] = 'http://localhost:8080'
+        elif "ASP.NET Core" in stack:
+            config['command'] = ["dotnet", "run"]
+            config['url'] = 'http://localhost:5164'  # Default for .NET 7+ Web API
 
         # MERN/PERN fullstack projects
-        elif any(stack_type in stack for stack_type in ["MERN", "PERN"]):
+        elif any(stack_type in stack for stack_type in ["MERN", "PERN", "Flask + React"]):
             # Check if we're in root directory with both frontend and backend
             if (folder / "frontend").exists() and (folder / "backend").exists():
                 config['command'] = ["npm", "run", "dev"]  # Should run concurrently
