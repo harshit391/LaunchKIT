@@ -131,13 +131,26 @@ def create_project_summary(data: dict, folder: Path):
     # Add stack-specific directory structure
     if _is_next_js_stack(stack):
         summary_content += """├── pages/              # Next.js pages
-├── components/         # React components
-├── public/             # Static assets
-"""
-    elif _is_react_based_stack(stack) and not _is_next_js_stack(stack):
+    ├── components/         # React components
+    """
+        # ADDED logic for Vue/Nuxt
+    elif "Vue.js" in stack or "Nuxt.js" in stack:
+        summary_content += """├── components/         # Vue components
+    ├── assets/             # Static assets
+    """
+        # ADDED logic for Svelte/SvelteKit
+    elif "Svelte" in stack:
+        summary_content += """├── lib/                # Svelte components/modules
+    ├── routes/             # SvelteKit pages
+    """
+        # ADDED logic for Angular
+    elif "Angular" in stack:
+        summary_content += """├── app/                # Main application module
+    ├── assets/             # Static assets
+    """
+    elif _is_react_based_stack(stack):
         summary_content += """├── components/         # React components
-├── public/             # Static assets
-"""
+    """
     elif _is_fullstack_stack(stack):
         if "Flask + React" in stack:
             summary_content += """├── frontend/           # React frontend
@@ -189,7 +202,7 @@ cd """ + str(folder) + """
 """
 
     # Add stack-specific installation commands
-    if _is_node_based_stack(stack):
+    if _is_node_based_stack(stack) or any(s in stack for s in ["Vue", "Angular", "Svelte"]):
         summary_content += "npm install"
         if "Flask + React" in stack:
             summary_content += """
@@ -204,8 +217,14 @@ cd ../frontend && npm install"""
 """
 
     # Add stack-specific dev server commands
-    if _is_next_js_stack(stack):
+    if _is_next_js_stack(stack) or "Nuxt.js" in stack:
         summary_content += "npm run dev  # Starts on http://localhost:3000"
+        # ADDED logic for Vite-based stacks
+    elif "Vite" in stack or "SvelteKit" in stack:
+        summary_content += "npm run dev  # Starts on http://localhost:5173"
+        # ADDED logic for Angular
+    elif "Angular" in stack:
+        summary_content += "npm start    # Starts on http://localhost:4200"
     elif _is_react_based_stack(stack) and not _is_next_js_stack(stack):
         summary_content += "npm start   # Starts on http://localhost:3000"
     elif "Node.js (Express)" in stack:
@@ -308,6 +327,36 @@ kubectl port-forward service/app-service 8080:80
 - **API Routes:** Built-in API support
 - **Deployment:** Optimized for Vercel (also works elsewhere)
 """
+    elif "Vue.js (Vite)" in stack:
+        summary_content += """- **Frontend Framework:** Vue 3
+    - **Build Tool:** Vite
+    - **Development Server:** Vite dev server
+    - **Recommended:** Composition API, Single File Components
+    """
+    elif "Nuxt.js" in stack:
+        summary_content += """- **Fullstack Framework:** Nuxt.js (based on Vue)
+    - **Rendering:** Universal (SSR, SSG, CSR)
+    - **Routing:** File-based routing
+    - **Deployment:** Optimized for serverless platforms
+    """
+    elif "Angular" in stack:
+        summary_content += """- **Frontend Framework:** Angular
+    - **Architecture:** Component-based, opinionated framework
+    - **Language:** TypeScript
+    - **Tooling:** Angular CLI
+    """
+    elif "Svelte (Vite)" in stack:
+        summary_content += """- **UI Framework:** Svelte
+    - **Compiler:** Compiles to highly optimized vanilla JS
+    - **Build Tool:** Vite
+    - **Reactivity:** Built into the language
+    """
+    elif "SvelteKit" in stack:
+        summary_content += """- **Fullstack Framework:** SvelteKit
+    - **Rendering:** SSR, SSG with client-side hydration
+    - **Routing:** File-based routing
+    - **Adapters:** Build for any platform (Vercel, Netlify, Node)
+    """
     elif "Node.js (Express)" in stack:
         summary_content += """- **Runtime:** Node.js
 - **Framework:** Express.js

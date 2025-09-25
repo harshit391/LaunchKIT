@@ -15,6 +15,11 @@ STACK_CATALOG: Dict[str, List[str]] = {
     "Frontend only": [
         "React (Vite)",
         "React (Next.js)",
+        "Vue.js (Vite)",
+        "Nuxt.js (Vue + SSR/SSG)",
+        "Angular",
+        "Svelte (Vite)",
+        "SvelteKit",
     ],
     "Backend only": [
         "Node.js (Express)",
@@ -28,15 +33,13 @@ STACK_CATALOG: Dict[str, List[str]] = {
     ],
     "Other / Custom": [
         "Empty Project (just Git + README)",
-        "Provide custom instructions at runtime",
     ],
 }
 
 # STACK_CATALOG: Dict[str, List[str]] = {
 #     "Frontend only": [
 #         "React (Vite)",
-#         "React (Next.js - Static UI)",
-#         "React (Next.js - SSR)",
+#         "React (Next.js)",
 #         "Vue.js (Vite)",
 #         "Nuxt.js (Vue + SSR/SSG)",
 #         "Angular",
@@ -81,6 +84,7 @@ STACK_CATALOG: Dict[str, List[str]] = {
 # }
 #
 # Optional add-ons configurable per project
+
 ADDONS: List[str] = [
     "Add Docker Support",
     "Add Kubernetes Support",
@@ -92,6 +96,11 @@ ADDONS: List[str] = [
 SCAFFOLDERS: Dict[str, Callable[...,bool]] = {
     "React (Vite)": scaffold_react_vite,
     "React (Next.js)": scaffold_nextjs_static,
+    "Vue.js (Vite)": scaffold_vue_vite,
+    "Nuxt.js (Vue + SSR/SSG)": scaffold_nuxtjs,
+    "Angular": scaffold_angular,
+    "Svelte (Vite)": scaffold_svelte_vite,
+    "SvelteKit": scaffold_sveltekit,
     "Node.js (Express)": scaffold_node_express,
     "Flask (Python)": scaffold_flask_backend,
     "MERN (Mongo + Express + React + Node)": scaffold_mern,

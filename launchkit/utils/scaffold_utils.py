@@ -65,22 +65,22 @@ def _install_testing_deps_node(folder: Path, framework: str = "jest") -> bool:
         arrow_message(f"Installing {framework} testing dependencies...")
 
         if framework == "jest":
-            # Install Jest and React Testing Library
+            # Install Jest and relevant testing libraries
             if not _run_command(
-                    "npm install --save-dev jest @testing-library/jest-dom @testing-library/react @testing-library/user-event jest-environment-jsdom",
+                    "npm install --save-dev jest @testing-library/jest-dom @testing-library/vue @testing-library/svelte jest-environment-jsdom @vue/vue3-jest",
                     folder):
                 return False
         elif framework == "vitest":
             # Install Vitest
             if not _run_command(
-                    "npm install --save-dev vitest @testing-library/jest-dom @testing-library/react @testing-library/user-event jsdom",
+                    "npm install --save-dev vitest @testing-library/jest-dom @testing-library/vue @testing-library/svelte jsdom",
                     folder):
                 return False
-        elif framework == "mocha":
-            # Install Mocha and Chai
-            if not _run_command("npm install --save-dev mocha chai @testing-library/react @testing-library/jest-dom",
-                                folder):
-                return False
+        elif framework == "playwright":
+            if not _run_command("npm install --save-dev @playwright/test", folder):
+                 return False
+            if not _run_command("npx playwright install", folder):
+                 return False
 
         status_message(f"{framework} testing dependencies installed successfully!")
         return True
@@ -267,6 +267,127 @@ test('renders learn react link', () => {
 
     except Exception as e:
         status_message(f"Failed to scaffold React frontend: {e}", False)
+        return False
+
+
+def scaffold_vue_vite(folder: Path) -> bool:
+    """Scaffold a Vue.js project using Vite."""
+    arrow_message("Scaffolding Vue.js (Vite) frontend...")
+    try:
+        if not _run_command("npm create vite@latest . -- --template vue", folder):
+            return False
+        status_message("Vue.js Vite project initialized.")
+        if not _run_command("npm install", folder):
+            return False
+        if not _install_testing_deps_node(folder, "vitest"):
+            status_message("Warning: Failed to install testing dependencies", False)
+
+        # Vitest config
+        (folder / "vite.config.js").write_text("""
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+export default defineConfig({
+  plugins: [vue()],
+  test: {
+    globals: true,
+    environment: 'jsdom',
+  },
+})
+""")
+        status_message("Vue.js (Vite) project scaffolded successfully.")
+        return True
+    except Exception as e:
+        status_message(f"Failed to scaffold Vue.js frontend: {e}", False)
+        return False
+
+
+def scaffold_nuxtjs(folder: Path) -> bool:
+    """Scaffold a Nuxt.js project."""
+    arrow_message("Scaffolding Nuxt.js frontend...")
+    try:
+        if not _run_command("npx nuxi@latest init .", folder):
+            return False
+        status_message("Nuxt.js project initialized.")
+        if not _run_command("npm install", folder):
+            return False
+        # Nuxt has testing integrated, can be added via modules
+        arrow_message("To add testing, run 'npm install --save-dev @nuxt/test-utils'")
+        status_message("Nuxt.js project scaffolded successfully.")
+        return True
+    except Exception as e:
+        status_message(f"Failed to scaffold Nuxt.js frontend: {e}", False)
+        return False
+
+
+def scaffold_angular(folder: Path) -> bool:
+    """Scaffold an Angular project."""
+    arrow_message("Scaffolding Angular frontend...")
+    try:
+        # The Angular CLI creates a sub-folder, so we scaffold in a temp name and move contents
+        temp_proj_name = "angular_temp_project"
+        if not _run_command(f"npx -p @angular/cli@latest ng new {temp_proj_name} --directory . --routing --style=css --standalone=false --skip-git", folder):
+            return False
+
+        status_message("Angular project initialized.")
+        if not _run_command("npm install", folder):
+             return False
+
+        # Angular comes with Karma/Jasmine pre-configured.
+        arrow_message("Angular project includes Karma and Jasmine for testing.")
+        status_message("Angular project scaffolded successfully.")
+        return True
+    except Exception as e:
+        status_message(f"Failed to scaffold Angular frontend: {e}", False)
+        return False
+
+
+def scaffold_svelte_vite(folder: Path) -> bool:
+    """Scaffold a Svelte project using Vite."""
+    arrow_message("Scaffolding Svelte (Vite) frontend...")
+    try:
+        if not _run_command("npm create vite@latest . -- --template svelte", folder):
+            return False
+        status_message("Svelte Vite project initialized.")
+        if not _run_command("npm install", folder):
+            return False
+        if not _install_testing_deps_node(folder, "vitest"):
+            status_message("Warning: Failed to install testing dependencies", False)
+        # Vitest config
+        (folder / "vite.config.js").write_text("""
+import { defineConfig } from 'vite'
+import { svelte } from '@sveltejs/vite-plugin-svelte'
+export default defineConfig({
+  plugins: [svelte()],
+  test: {
+    globals: true,
+    environment: 'jsdom',
+  },
+})
+""")
+        status_message("Svelte (Vite) project scaffolded successfully.")
+        return True
+    except Exception as e:
+        status_message(f"Failed to scaffold Svelte frontend: {e}", False)
+        return False
+
+
+def scaffold_sveltekit(folder: Path) -> bool:
+    """Scaffold a SvelteKit project."""
+    arrow_message("Scaffolding SvelteKit frontend...")
+    try:
+        # SvelteKit CLI is interactive. We pass 'enter' to accept defaults.
+        if not _run_command("npm create svelte@latest .", folder):
+            return False
+        status_message("SvelteKit project initialized.")
+        if not _run_command("npm install", folder):
+            return False
+        if not _install_testing_deps_node(folder, "playwright"):
+            status_message("Warning: Failed to install Playwright for testing", False)
+        arrow_message("SvelteKit uses Playwright for end-to-end testing.")
+        status_message("SvelteKit project scaffolded successfully.")
+        return True
+    except Exception as e:
+        status_message(f"Failed to scaffold SvelteKit frontend: {e}", False)
         return False
 
 

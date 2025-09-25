@@ -646,7 +646,7 @@ def detect_server_config(folder: Path, stack: str) -> dict:
 
     try:
         # React/Vite projects
-        if any(tech in stack for tech in ["React", "Vite"]):
+        if any(tech in stack for tech in ["React", "Vite", "Svelte (Vite)", "Vue.js (Vite)"]):
             package_json = folder / "package.json"
             if package_json.exists():
                 with open(package_json, 'r') as f:
@@ -656,17 +656,29 @@ def detect_server_config(folder: Path, stack: str) -> dict:
                 if "dev" in scripts:
                     config['command'] = ["npm", "run", "dev"]
                     # Vite typically uses port 5173
-                    if "vite" in scripts.get("dev", "").lower():
-                        config['url'] = 'http://localhost:5173'
+                    config['url'] = 'http://localhost:5173'
                 elif "start" in scripts:
                     config['command'] = ["npm", "start"]
-                else:
-                    config['command'] = ["npm", "run", "dev"]
 
-        # Next.js projects
+            # SvelteKit projects
+        elif "SvelteKit" in stack:
+            config['command'] = ["npm", "run", "dev"]
+            config['url'] = 'http://localhost:5173'
+
+            # Next.js projects
         elif "Next.js" in stack or "NextJS" in stack:
             config['command'] = ["npm", "run", "dev"]
             config['url'] = 'http://localhost:3000'
+
+            # Nuxt.js projects
+        elif "Nuxt.js" in stack:
+            config['command'] = ["npm", "run", "dev"]
+            config['url'] = 'http://localhost:3000'
+
+            # Angular projects
+        elif "Angular" in stack:
+            config['command'] = ["npm", "start"]  # Angular CLI uses 'ng serve' via this script
+            config['url'] = 'http://localhost:4200'
 
         # MERN/PERN fullstack projects
         elif any(stack_type in stack for stack_type in ["MERN", "PERN"]):
