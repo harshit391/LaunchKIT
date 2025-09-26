@@ -24,49 +24,26 @@ def main():
 
         # Main application loop
         while True:
-            # welcome_user() now handles the main menu loop
+            # handle_user_data() calls welcome_user() which now contains the main menu loop
             data, folder = handle_user_data()
 
-            # If user selects a project, data and folder will be returned
-            if data and folder:
-                if data.get("setup_complete", False):
-                    # For existing projects, enter the project-specific menu
-                    handle_existing_project(data, folder)
-                else:
-                    # For new projects, start the setup process
-                    setup_new_project(data, folder)
-
-            # After a project session ends (or if the user exits the selection),
-            # the loop continues, showing the main menu again.
-            # If welcome_user() returns (None, None), it means the user chose to exit the app.
+            # If the user exits from the welcome screen, data and folder will be None
             if not data and not folder:
                 break  # Exit the while loop and the application
+
+            # If user selects a project, process it
+            if data.get("setup_complete", False):
+                # For existing projects, enter the project-specific menu
+                handle_existing_project(data, folder)
+            else:
+                # For new projects, start the setup process
+                setup_new_project(data, folder)
+
+            # After a project session ends, the loop continues, showing the main menu again.
 
     except KeyboardInterrupt:
         cleanup_processes()
         rich_message("\nGoodbye! 👋", style="bold green")
     except Exception as e:
         status_message(f"An unexpected error occurred: {e}", False)
-        cleanup_processes()
-
-
-def main_for_cli():
-    try:
-        if not is_learner_mode_on():
-            setup_learner_mode(is_first_time=True)
-        else:
-            setup_learner_mode(is_first_time=False)
-
-        data, folder = handle_user_data()
-
-        if data.get("setup_complete", False):
-            handle_existing_project(data, folder)
-        else:
-            setup_new_project(data, folder)
-
-    except KeyboardInterrupt:
-        cleanup_processes()
-        rich_message("\nGoodbye! 👋", False)
-    except Exception as e:
-        status_message(f"Unexpected error: {e}", False)
         cleanup_processes()

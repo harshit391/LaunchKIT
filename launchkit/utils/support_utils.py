@@ -1,31 +1,12 @@
 import os
 import shutil
-import subprocess
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List
 
 from launchkit.utils.display_utils import *
 from launchkit.utils.que import Question
-from launchkit.utils.user_utils import add_data_to_db
+from launchkit.utils.user_utils import add_data_to_db, run_command_with_output
 from launchkit.utils.stack_utils import *
-
-
-def _run_command(command: str, cwd: Path = None, capture_output: bool = True, timeout: int = 300) -> Tuple[bool, str, str]:
-    """Run a shell command and return success status and output with proper error handling."""
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            cwd=cwd,
-            capture_output=capture_output,
-            text=True,
-            timeout=timeout
-        )
-        return result.returncode == 0, result.stdout, result.stderr
-    except subprocess.TimeoutExpired:
-        return False, "", f"Command timed out after {timeout} seconds"
-    except Exception as e:
-        return False, "", str(e)
 
 
 def create_flask_production_config(folder: Path):
@@ -228,7 +209,7 @@ def deploy_with_docker(data: Dict[str, Any]):
             return False
 
         # Check Docker availability
-        success, _, error = _run_command("docker --version")
+        success, _, error = run_command_with_output("docker --version")
         if not success:
             status_message("Docker is not installed or not running.", False)
             arrow_message("Please install Docker and ensure it's running.")
@@ -236,7 +217,7 @@ def deploy_with_docker(data: Dict[str, Any]):
             return False
 
         # Check docker-compose availability
-        success, _, error = _run_command("docker-compose --version")
+        success, _, error = run_command_with_output("docker-compose --version")
         if not success:
             status_message("docker-compose is not installed.", False)
             arrow_message("Please install docker-compose.")
@@ -246,13 +227,13 @@ def deploy_with_docker(data: Dict[str, Any]):
 
         # Stop any existing containers first
         progress_message("Stopping existing containers...")
-        stop_success, _, _ = _run_command(f"docker-compose -f {compose_path} down", cwd=folder)
+        stop_success, _, _ = run_command_with_output(f"docker-compose -f {compose_path} down", cwd=folder)
         if stop_success:
             arrow_message("Existing containers stopped")
 
         # Build and start services
         progress_message("Building and starting services...")
-        build_success, build_output, build_error = _run_command(
+        build_success, build_output, build_error = run_command_with_output(
             f"docker-compose -f {compose_path} up -d --build",
             cwd=folder,
             timeout=600  # 10 minutes timeout for building
@@ -263,7 +244,7 @@ def deploy_with_docker(data: Dict[str, Any]):
 
             # Show running containers
             rich_message("Running containers:", False)
-            ps_success, ps_output, _ = _run_command(f"docker-compose -f {compose_path} ps", cwd=folder)
+            ps_success, ps_output, _ = run_command_with_output(f"docker-compose -f {compose_path} ps", cwd=folder)
             if ps_success and ps_output.strip():
                 print(ps_output)
 
@@ -314,7 +295,7 @@ def deploy_to_kubernetes(data: Dict[str, Any]):
             return False
 
         # Check for kubectl
-        success, kubectl_version, error = _run_command("kubectl version --client=true")
+        success, kubectl_version, error = run_command_with_output("kubectl version --client=true")
         if not success:
             status_message("kubectl is not installed or not configured.", False)
             arrow_message("Please install kubectl and configure cluster access.")
@@ -324,7 +305,7 @@ def deploy_to_kubernetes(data: Dict[str, Any]):
         arrow_message(f"kubectl version: {kubectl_version.strip()}")
 
         # Check cluster connectivity
-        cluster_success, cluster_info, cluster_error = _run_command("kubectl cluster-info", timeout=10)
+        cluster_success, cluster_info, cluster_error = run_command_with_output("kubectl cluster-info", timeout=10)
         if not cluster_success:
             status_message("Cannot connect to Kubernetes cluster.", False)
             arrow_message("Please ensure kubectl is configured to access your cluster.")
@@ -347,7 +328,7 @@ def deploy_to_kubernetes(data: Dict[str, Any]):
         namespace = os.environ.get("KUBE_NAMESPACE", app_name)
         progress_message(f"Creating namespace '{namespace}'...")
 
-        create_ns_success, _, _ = _run_command(
+        create_ns_success, _, _ = run_command_with_output(
             f"kubectl create namespace {namespace} --dry-run=client -o yaml | kubectl apply -f -"
         )
         if create_ns_success:
@@ -675,7 +656,7 @@ def _deploy_with_kustomize(k8s_dir: Path, environment: str, namespace: str) -> b
     """Deploy using Kustomize."""
     try:
         # Check for kustomize
-        success, _, error = _run_command("kustomize version")
+        success, _, error = run_command_with_output("kustomize version")
         if not success:
             status_message("kustomize is not installed.", False)
             arrow_message("Please install kustomize first.")
@@ -683,10 +664,10 @@ def _deploy_with_kustomize(k8s_dir: Path, environment: str, namespace: str) -> b
 
         if environment == "base":
             deploy_path = k8s_dir / "base"
-            success, output, error = _run_command(f"kubectl apply -f {deploy_path}/ -n {namespace}")
+            success, output, error = run_command_with_output(f"kubectl apply -f {deploy_path}/ -n {namespace}")
         else:
             deploy_path = k8s_dir / "overlays" / environment
-            success, output, error = _run_command(
+            success, output, error = run_command_with_output(
                 f"kustomize build {deploy_path} | kubectl apply -f - -n {namespace}"
             )
 
@@ -712,14 +693,14 @@ def _deploy_with_helm(folder: Path, app_name: str, namespace: str) -> bool:
             return False
 
         # Check for helm
-        success, _, error = _run_command("helm version")
+        success, _, error = run_command_with_output("helm version")
         if not success:
             status_message("Helm is not installed.", False)
             arrow_message("Please install Helm first.")
             return False
 
         # Install/upgrade with Helm
-        success, output, error = _run_command(
+        success, output, error = run_command_with_output(
             f"helm upgrade --install {app_name} {helm_dir} -n {namespace} --create-namespace",
             timeout=300
         )
@@ -739,7 +720,7 @@ def _deploy_with_helm(folder: Path, app_name: str, namespace: str) -> bool:
 def _deploy_with_kubectl(k8s_dir: Path, namespace: str) -> bool:
     """Deploy using kubectl with raw manifests."""
     try:
-        success, output, error = _run_command(f"kubectl apply -f {k8s_dir}/ -n {namespace}")
+        success, output, error = run_command_with_output(f"kubectl apply -f {k8s_dir}/ -n {namespace}")
 
         if success:
             status_message("kubectl deployment successful!")
@@ -759,7 +740,7 @@ def _wait_for_k8s_deployment(app_name: str, namespace: str):
         progress_message("Waiting for deployment to be ready...")
         deployment_name = f"{app_name}-deployment"
 
-        success, output, error = _run_command(
+        success, output, error = run_command_with_output(
             f"kubectl rollout status deployment/{deployment_name} -n {namespace} --timeout=300s"
         )
 
@@ -780,18 +761,18 @@ def _show_k8s_deployment_status(app_name: str, namespace: str):
 
         # Show pods
         print("Pods:")
-        success, output, _ = _run_command(f"kubectl get pods -n {namespace} -l app={app_name}")
+        success, output, _ = run_command_with_output(f"kubectl get pods -n {namespace} -l app={app_name}")
         if success and output:
             print(output)
 
         # Show services
         print("\nServices:")
-        success, output, _ = _run_command(f"kubectl get svc -n {namespace}")
+        success, output, _ = run_command_with_output(f"kubectl get svc -n {namespace}")
         if success and output:
             print(output)
 
         # Check for ingress
-        success, output, _ = _run_command(f"kubectl get ingress -n {namespace}")
+        success, output, _ = run_command_with_output(f"kubectl get ingress -n {namespace}")
         if success and output.strip():
             print("\nIngress:")
             print(output)
@@ -1658,15 +1639,15 @@ def _update_node_dependencies(folder: Path):
             return
 
         # Update dependencies
-        success, output, error = _run_command("npm update", cwd=folder, timeout=300)
+        success, output, error = run_command_with_output("npm update", cwd=folder, timeout=300)
         if success:
             arrow_message(f"npm dependencies updated in {folder.name}")
 
             # Check for security vulnerabilities
-            audit_success, audit_output, _ = _run_command("npm audit --audit-level=high", cwd=folder)
+            audit_success, audit_output, _ = run_command_with_output("npm audit --audit-level=high", cwd=folder)
             if not audit_success and "vulnerabilities" in audit_output:
                 arrow_message("Running security fixes...")
-                _run_command("npm audit fix", cwd=folder)
+                run_command_with_output("npm audit fix", cwd=folder)
         else:
             status_message(f"npm update failed in {folder.name}: {error}", False)
 
@@ -1684,10 +1665,10 @@ def _update_python_dependencies(folder: Path):
             return
 
         # Update pip first
-        _run_command("python -m pip install --upgrade pip", cwd=folder)
+        run_command_with_output("python -m pip install --upgrade pip", cwd=folder)
 
         # Update all dependencies
-        success, output, error = _run_command(
+        success, output, error = run_command_with_output(
             "pip install --upgrade -r requirements.txt",
             cwd=folder,
             timeout=300
@@ -1697,9 +1678,9 @@ def _update_python_dependencies(folder: Path):
             arrow_message(f"Python dependencies updated in {folder.name}")
 
             # Check for security vulnerabilities (if safety is available)
-            safety_success, _, _ = _run_command("pip show safety", cwd=folder)
+            safety_success, _, _ = run_command_with_output("pip show safety", cwd=folder)
             if safety_success:
-                _run_command("safety check", cwd=folder)
+                run_command_with_output("safety check", cwd=folder)
         else:
             status_message(f"pip update failed in {folder.name}: {error}", False)
 

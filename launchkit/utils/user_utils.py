@@ -166,7 +166,7 @@ def list_existing_projects():
 
 
 def run_command_with_output(
-    command: str, capture_output: bool = True, timeout: int = 30
+    command: str, capture_output: bool = True, timeout: int = 30, cwd: Path = None
 ) -> tuple:
     """Enhanced command execution with better output handling."""
 
@@ -177,6 +177,7 @@ def run_command_with_output(
             capture_output=capture_output,
             text=True,
             timeout=timeout,
+            cwd=cwd,  # Add this line
         )
         return result.returncode == 0, result.stdout, result.stderr
     except subprocess.TimeoutExpired:
@@ -186,9 +187,9 @@ def run_command_with_output(
 
 
 # Keep the old function for backward compatibility
-def run_command(command: str, capture_output: bool = True) -> tuple:
+def run_command(command: str, capture_output: bool = True, cwd: Path = None) -> tuple:
     """Run a shell command and return success status and output."""
-    return run_command_with_output(command, capture_output, 30)
+    return run_command_with_output(command, capture_output, 30, cwd)
 
 
 def check_docker_containers(project_name: str) -> Dict[str, Any]:
@@ -3880,43 +3881,60 @@ def load_existing_project(project_name):
         return None
 
 
-def welcome_user():
-    """Handles user onboarding with project selection (start new or continue)."""
-    while True:  # Loop to allow returning to this menu
-        existing_projects = list_existing_projects()
 
-        main_options = ["Start New Project", "Docker / Kubernetes", "Exit"] # <--- ADD "Docker / Kubernetes"
+def manage_projects_menu():
+    """Handles the user flow for creating a new or selecting an existing project."""
+    existing_projects = list_existing_projects()
+    project_options = ["Start New Project"]
+    if existing_projects:
+        project_options.append("Continue Existing Project")
+    project_options.append("Back to Main Menu")
+
+    action = Question("Manage Projects:", project_options).ask()
+
+    if "Start" in action:
+        return create_new_project()
+    elif "Continue" in action:
+        project_choice = Question(
+            "Select a project to continue:",
+            existing_projects
+        ).ask()
+        if project_choice in existing_projects:
+            return load_existing_project(project_choice)
+        else:
+            status_message("Invalid project selection.", False)
+            return None # Indicate to loop again in the main menu
+    else: # Back to Main Menu
+        return None # Indicate to loop again in the main menu
+
+# In user_utils.py
+
+def welcome_user():
+    """Handles user onboarding with the main application menu."""
+    while True:
+        main_options = [
+            "1. Manage Projects",
+            "2. Global Tools (Docker/Kubernetes)",
+            "3. Exit"
+        ]
         prompt = "What would you like to do?"
 
-        if existing_projects:
-            # Add "Continue" option if projects exist
-            main_options.insert(1, "Continue Existing Project")
+        choice = Question(prompt, main_options).ask()
 
-        project_action = Question(prompt, main_options).ask()
+        if "Manage Projects" in choice:
+            project_data = manage_projects_menu()
+            if project_data:
+                # If a project was successfully created or loaded, return its data
+                return project_data
+            # If manage_projects_menu returns None (e.g., user chose 'Back'), the loop continues.
 
-        if "Continue" in project_action:
-            project_choice = Question(
-                "Select a project to continue:",
-                existing_projects
-            ).ask()
-            if project_choice in existing_projects:
-                return load_existing_project(project_choice)
-            else:
-                status_message("Invalid project selection.", False)
-                continue
-
-        elif "Start" in project_action:
-            return create_new_project()
-
-        elif "Docker" in project_action: # <--- ADD THIS BLOCK
+        elif "Global Tools" in choice:
             handle_docker_kubernetes_operations()
-            # After the function returns, continue the loop to show the main menu again.
-            continue
+            # After handling tools, the loop continues to show the main menu again.
 
-        elif "Exit" in project_action:
+        elif "Exit" in choice:
             exiting_program()
             sys.exit(0)
-
 
 def add_data_to_db(data: dict, selected_folder: str):
     """Update the project's data.json with new data and create a backup."""

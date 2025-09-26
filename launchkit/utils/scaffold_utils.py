@@ -9,6 +9,7 @@ from launchkit.utils.display_utils import (
     arrow_message,
     status_message,
 )
+from launchkit.utils.user_utils import run_command_with_output
 
 
 def cleanup_failed_scaffold(folder: Path) -> None:
@@ -35,20 +36,6 @@ def cleanup_failed_scaffold(folder: Path) -> None:
         status_message(f"Cleanup error: {e}", False)
 
 
-def _run_command(command: str, cwd: Path, shell: bool = True, check: bool = True) -> bool:
-    """Run a command and return success status."""
-    try:
-        subprocess.run(command, cwd=cwd, shell=shell, check=check)
-        return True
-    except subprocess.CalledProcessError as e:
-        error_msg = e.stderr.decode() if e.stderr else str(e)
-        status_message(f"Command failed: {command}\nError: {error_msg}", False)
-        return False
-    except Exception as e:
-        status_message(f"Unexpected error running command: {command}\nError: {e}", False)
-        return False
-
-
 def _create_file_safely(file_path: Path, content: str) -> bool:
     """Create a file with error handling."""
     try:
@@ -66,20 +53,20 @@ def _install_testing_deps_node(folder: Path, framework: str = "jest") -> bool:
 
         if framework == "jest":
             # Install Jest and relevant testing libraries
-            if not _run_command(
+            if not run_command_with_output(
                     "npm install --save-dev jest @testing-library/jest-dom @testing-library/vue @testing-library/svelte jest-environment-jsdom @vue/vue3-jest",
-                    folder):
+                    cwd=folder):
                 return False
         elif framework == "vitest":
             # Install Vitest
-            if not _run_command(
+            if not run_command_with_output(
                     "npm install --save-dev vitest @testing-library/jest-dom @testing-library/vue @testing-library/svelte jsdom",
-                    folder):
+                    cwd=folder):
                 return False
         elif framework == "playwright":
-            if not _run_command("npm install --save-dev @playwright/test", folder):
+            if not run_command_with_output("npm install --save-dev @playwright/test", cwd=folder):
                  return False
-            if not _run_command("npx playwright install", folder):
+            if not run_command_with_output("npx playwright install", cwd=folder):
                  return False
 
         status_message(f"{framework} testing dependencies installed successfully!")
@@ -98,11 +85,11 @@ def _install_testing_deps_python(folder: Path, framework: str = "pytest") -> boo
         pip_path = "venv\\Scripts\\pip.exe" if sys.platform.startswith("win") else "venv/bin/pip"
 
         if framework == "pytest":
-            if not _run_command(f"{pip_path} install pytest pytest-cov pytest-flask", folder):
+            if not run_command_with_output(f"{pip_path} install pytest pytest-cov pytest-flask", cwd=folder):
                 return False
         elif framework == "unittest":
             # unittest is built-in, but install coverage tools
-            if not _run_command(f"{pip_path} install coverage", folder):
+            if not run_command_with_output(f"{pip_path} install coverage", cwd=folder):
                 return False
 
         status_message(f"{framework} testing dependencies installed successfully!")
@@ -195,13 +182,13 @@ def scaffold_react_vite(folder: Path) -> bool:
 
     try:
         # Create Vite React project
-        if not _run_command("npm create vite@latest .", folder):
+        if not run_command_with_output("npm create vite@latest .", cwd=folder):
             return False
 
         status_message("React Vite project initialized successfully.")
 
         # Install dependencies
-        if not _run_command("npm install", folder):
+        if not run_command_with_output("npm install", cwd=folder):
             return False
 
         # Install testing dependencies
@@ -274,10 +261,10 @@ def scaffold_vue_vite(folder: Path) -> bool:
     """Scaffold a Vue.js project using Vite."""
     arrow_message("Scaffolding Vue.js (Vite) frontend...")
     try:
-        if not _run_command("npm create vite@latest . -- --template vue", folder):
+        if not run_command_with_output("npm create vite@latest . -- --template vue", cwd=folder):
             return False
         status_message("Vue.js Vite project initialized.")
-        if not _run_command("npm install", folder):
+        if not run_command_with_output("npm install", cwd=folder):
             return False
         if not _install_testing_deps_node(folder, "vitest"):
             status_message("Warning: Failed to install testing dependencies", False)
@@ -305,10 +292,10 @@ def scaffold_nuxtjs(folder: Path) -> bool:
     """Scaffold a Nuxt.js project."""
     arrow_message("Scaffolding Nuxt.js frontend...")
     try:
-        if not _run_command("npx nuxi@latest init .", folder):
+        if not run_command_with_output("npx nuxi@latest init .", cwd=folder):
             return False
         status_message("Nuxt.js project initialized.")
-        if not _run_command("npm install", folder):
+        if not run_command_with_output("npm install", cwd=folder):
             return False
         # Nuxt has testing integrated, can be added via modules
         arrow_message("To add testing, run 'npm install --save-dev @nuxt/test-utils'")
@@ -320,38 +307,24 @@ def scaffold_nuxtjs(folder: Path) -> bool:
 
 
 def scaffold_angular(folder: Path) -> bool:
-    """Scaffold an Angular project."""
+    """Scaffold an Angular project directly in the target folder."""
     arrow_message("Scaffolding Angular frontend...")
     try:
-        # The Angular CLI creates a sub-folder, so we scaffold in a temp directory
-        # and move the contents to the target folder to avoid potential conflicts.
-        temp_proj_name = "angular_temp_project"
+        # Define the simplified command to run directly in the target folder.
+        # The `.` tells the Angular CLI to use the current directory.
+        command = (
+            "npx -p @angular/cli@latest ng new . "
+            "--routing --style=css --standalone=false --skip-git --skip-install"
+        )
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
+        # Run the command, setting the current working directory ('cwd') to the target folder.
+        if not run_command_with_output(command, cwd=folder):
+            return False
 
-            # Run 'ng new' inside the temporary directory. It will create a sub-folder with the project name.
-            # We have removed the problematic '--directory .' flag.
-            if not _run_command(
-                    f"npx -p @angular/cli@latest ng new {temp_proj_name} --routing --style=css --standalone=false --skip-git",
-                    temp_path
-            ):
-                return False
+        status_message("Angular project initialized successfully.")
 
-            status_message("Angular project initialized in a temporary location.")
-
-            # Define the source path of the newly generated project files
-            source_dir = temp_path / temp_proj_name
-
-            # Move the contents from the generated sub-folder to the actual target folder
-            arrow_message(f"Moving project files to {folder}...")
-            for item in source_dir.iterdir():
-                shutil.move(str(item), str(folder / item.name))
-
-            status_message("Project files moved successfully.")
-
-        # Now that files are in place, run npm install in the final destination folder
-        if not _run_command("npm install", folder):
+        # Run npm install after the project structure is in place.
+        if not run_command_with_output("npm install", cwd=folder):
             return False
 
         # Angular comes with Karma/Jasmine pre-configured for testing.
@@ -362,14 +335,15 @@ def scaffold_angular(folder: Path) -> bool:
         status_message(f"Failed to scaffold Angular frontend: {e}", False)
         return False
 
+
 def scaffold_svelte_vite(folder: Path) -> bool:
     """Scaffold a Svelte project using Vite."""
     arrow_message("Scaffolding Svelte (Vite) frontend...")
     try:
-        if not _run_command("npm create vite@latest . -- --template svelte", folder):
+        if not run_command_with_output("npm create vite@latest . -- --template svelte", cwd=folder):
             return False
         status_message("Svelte Vite project initialized.")
-        if not _run_command("npm install", folder):
+        if not run_command_with_output("npm install", cwd=folder):
             return False
         if not _install_testing_deps_node(folder, "vitest"):
             status_message("Warning: Failed to install testing dependencies", False)
@@ -397,10 +371,10 @@ def scaffold_sveltekit(folder: Path) -> bool:
     arrow_message("Scaffolding SvelteKit frontend...")
     try:
         # SvelteKit CLI is interactive. We pass 'enter' to accept defaults.
-        if not _run_command("npm create svelte@latest .", folder):
+        if not run_command_with_output("npm create svelte@latest .", cwd=folder):
             return False
         status_message("SvelteKit project initialized.")
-        if not _run_command("npm install", folder):
+        if not run_command_with_output("npm install", cwd=folder):
             return False
         if not _install_testing_deps_node(folder, "playwright"):
             status_message("Warning: Failed to install Playwright for testing", False)
@@ -423,7 +397,7 @@ def scaffold_nextjs_static(folder: Path) -> bool:
             status_message(f"Created temporary directory for scaffolding.")
 
             # 2. Run create-next-app inside the temporary directory
-            if not _run_command("npx create-next-app@latest .", temp_path):
+            if not run_command_with_output("npx create-next-app@latest .", cwd=temp_path):
                 status_message("Failed to initialize Next.js in temporary directory.", False)
                 return False
 
@@ -479,15 +453,15 @@ def scaffold_node_express(folder: Path) -> bool:
 
     try:
         # Initialize npm project
-        if not _run_command("npm init -y", folder):
+        if not run_command_with_output("npm init -y", cwd=folder):
             return False
 
         # Install Express dependencies
-        if not _run_command("npm install express cors dotenv", folder):
+        if not run_command_with_output("npm install express cors dotenv", cwd=folder):
             return False
 
         # Install dev dependencies including testing
-        if not _run_command("npm install --save-dev nodemon", folder):
+        if not run_command_with_output("npm install --save-dev nodemon", cwd=folder):
             return False
 
         # Install testing dependencies
@@ -555,7 +529,7 @@ def scaffold_flask_backend(folder: Path) -> bool:
 
     try:
         # Create virtual environment
-        if not _run_command(f"{sys.executable} -m venv venv", folder):
+        if not run_command_with_output(f"{sys.executable} -m venv venv", cwd=folder):
             return False
 
         status_message("Virtual environment created successfully.")
@@ -564,7 +538,7 @@ def scaffold_flask_backend(folder: Path) -> bool:
         pip_path = "venv\\Scripts\\pip.exe" if sys.platform.startswith("win") else "venv/bin/pip"
 
         # Install Flask dependencies
-        if not _run_command(f"{pip_path} install flask python-dotenv flask-cors", folder):
+        if not run_command_with_output(f"{pip_path} install flask python-dotenv flask-cors", cwd=folder):
             return False
 
         # Install testing dependencies
@@ -635,15 +609,15 @@ def scaffold_mern(folder: Path) -> bool:
         backend_folder.mkdir(exist_ok=True)
 
         # Initialize backend
-        if not _run_command("npm init -y", backend_folder):
+        if not run_command_with_output("npm init -y", cwd=backend_folder):
             return False
 
         # Install backend dependencies
-        if not _run_command("npm install express mongoose cors dotenv", backend_folder):
+        if not run_command_with_output("npm install express mongoose cors dotenv", cwd=backend_folder):
             return False
 
         # Install backend dev dependencies including testing
-        if not _run_command("npm install --save-dev nodemon", backend_folder):
+        if not run_command_with_output("npm install --save-dev nodemon", cwd=backend_folder):
             return False
 
         # Install backend testing dependencies
@@ -695,11 +669,11 @@ describe('API Tests', () => {
             return False
 
         # Create React frontend
-        if not _run_command("npm create vite@latest frontend -- --template react", folder):
+        if not run_command_with_output("npm create vite@latest frontend -- --template react", cwd=folder):
             return False
 
         frontend_folder = folder / "frontend"
-        if not _run_command("npm install", frontend_folder):
+        if not run_command_with_output("npm install", cwd=frontend_folder):
             return False
 
         # Install frontend testing dependencies
@@ -774,7 +748,7 @@ test('renders learn react link', () => {
             return False
 
         # Install root dependencies
-        if not _run_command("npm install", folder):
+        if not run_command_with_output("npm install", cwd=folder):
             return False
 
         status_message("MERN fullstack scaffolded successfully.")
@@ -795,15 +769,15 @@ def scaffold_pern(folder: Path) -> bool:
         backend_folder.mkdir(exist_ok=True)
 
         # Initialize backend
-        if not _run_command("npm init -y", backend_folder):
+        if not run_command_with_output("npm init -y", cwd=backend_folder):
             return False
 
         # Install backend dependencies
-        if not _run_command("npm install express pg cors dotenv", backend_folder):
+        if not run_command_with_output("npm install express pg cors dotenv", cwd=backend_folder):
             return False
 
         # Install backend dev dependencies including testing
-        if not _run_command("npm install --save-dev nodemon", backend_folder):
+        if not run_command_with_output("npm install --save-dev nodemon", cwd=backend_folder):
             return False
 
         # Install backend testing dependencies
@@ -860,11 +834,11 @@ describe('PERN API Tests', () => {
             return False
 
         # Create React frontend (same as MERN)
-        if not _run_command("npm create vite@latest frontend -- --template react", folder):
+        if not run_command_with_output("npm create vite@latest frontend -- --template react", cwd=folder):
             return False
 
         frontend_folder = folder / "frontend"
-        if not _run_command("npm install", frontend_folder):
+        if not run_command_with_output("npm install", cwd=frontend_folder):
             return False
 
         # Install frontend testing dependencies
@@ -908,7 +882,7 @@ export default defineConfig({
             return False
 
         # Install root dependencies
-        if not _run_command("npm install", folder):
+        if not run_command_with_output("npm install", cwd=folder):
             return False
 
         status_message("PERN fullstack scaffolded successfully.")
@@ -929,10 +903,10 @@ def scaffold_flask_react(folder: Path) -> bool:
         frontend_folder.mkdir(exist_ok=True)
 
         # Scaffold React frontend with testing
-        if not _run_command("npm create vite@latest . -- --template react", frontend_folder):
+        if not run_command_with_output("npm create vite@latest . -- --template react", cwd=frontend_folder):
             return False
 
-        if not _run_command("npm install", frontend_folder):
+        if not run_command_with_output("npm install", cwd=frontend_folder):
             return False
 
         # Install frontend testing dependencies
@@ -946,14 +920,14 @@ def scaffold_flask_react(folder: Path) -> bool:
         backend_folder.mkdir(exist_ok=True)
 
         # Create virtual environment for backend
-        if not _run_command(f"{sys.executable} -m venv venv", backend_folder):
+        if not run_command_with_output(f"{sys.executable} -m venv venv", cwd=backend_folder):
             return False
 
         # Determine pip path based on OS
         pip_path = "venv\\Scripts\\pip.exe" if sys.platform.startswith("win") else "venv/bin/pip"
 
         # Install Flask dependencies
-        if not _run_command(f"{pip_path} install flask flask-cors python-dotenv", backend_folder):
+        if not run_command_with_output(f"{pip_path} install flask flask-cors python-dotenv", cwd=backend_folder):
             return False
 
         # Install backend testing dependencies
@@ -1050,7 +1024,7 @@ export default defineConfig({
             return False
 
         # Install concurrently for running both servers
-        if not _run_command("npm install", folder):
+        if not run_command_with_output("npm install", cwd=folder):
             return False
 
         status_message("Flask + React fullstack scaffolded successfully.")
@@ -1069,7 +1043,7 @@ def scaffold_openai_sdk(folder: Path) -> bool:
         folder.mkdir(parents=True, exist_ok=True)
 
         # Create virtual environment
-        if not _run_command(f"{sys.executable} -m venv venv", folder):
+        if not run_command_with_output(f"{sys.executable} -m venv venv", cwd=folder):
             return False
 
         status_message("Virtual environment created successfully.")
@@ -1078,7 +1052,7 @@ def scaffold_openai_sdk(folder: Path) -> bool:
         pip_path = "venv\\Scripts\\pip.exe" if sys.platform.startswith("win") else "venv/bin/pip"
 
         # Install OpenAI SDK
-        if not _run_command(f"{pip_path} install openai python-dotenv", folder):
+        if not run_command_with_output(f"{pip_path} install openai python-dotenv", cwd=folder):
             return False
 
         # Install testing dependencies
@@ -1390,9 +1364,9 @@ def scaffold_project_complete_delete(folder: Path) -> bool:
 def scaffold_fastify(folder: Path) -> bool:
     arrow_message("Scaffolding Fastify (Node.js) backend...")
     try:
-        if not _run_command("npm init -y", folder): return False
-        if not _run_command("npm install fastify @fastify/cors dotenv", folder): return False
-        if not _run_command("npm install --save-dev nodemon jest supertest", folder): return False
+        if not run_command_with_output("npm init -y", cwd=folder): return False
+        if not run_command_with_output("npm install fastify @fastify/cors dotenv", cwd=folder): return False
+        if not run_command_with_output("npm install --save-dev nodemon jest supertest", cwd=folder): return False
         status_message("Fastify dependencies installed.")
 
         if not _create_file_safely(folder / "server.js", scaffold_fastify_template["server"]): return False
@@ -1419,7 +1393,7 @@ def scaffold_nestjs(folder: Path) -> bool:
     arrow_message("Scaffolding NestJS (TypeScript) backend...")
     try:
         # NestJS CLI creates a sub-folder, so we scaffold and then move contents
-        if not _run_command(f"npx @nestjs/cli new . --skip-git --package-manager npm", folder):
+        if not run_command_with_output(f"npx @nestjs/cli new . --skip-git --package-manager npm", cwd=folder):
             return False
 
         status_message("NestJS project initialized and dependencies installed.")
@@ -1432,16 +1406,16 @@ def scaffold_nestjs(folder: Path) -> bool:
 def scaffold_django(folder: Path) -> bool:
     arrow_message("Scaffolding Django (Python) backend...")
     try:
-        if not _run_command(f"{sys.executable} -m venv venv", folder): return False
+        if not run_command_with_output(f"{sys.executable} -m venv venv", cwd=folder): return False
         status_message("Virtual environment created.")
         pip_path = "venv\\Scripts\\pip.exe" if sys.platform.startswith("win") else "venv/bin/pip"
         python_path = "venv\\Scripts\\python.exe" if sys.platform.startswith("win") else "venv/bin/python"
 
-        if not _run_command(f"{pip_path} install django python-dotenv psycopg2-binary gunicorn", folder): return False
+        if not run_command_with_output(f"{pip_path} install django python-dotenv psycopg2-binary gunicorn", cwd=folder): return False
         status_message("Django dependencies installed.")
 
         project_name = folder.name.lower().replace("-", "_")
-        if not _run_command(f"django-admin startproject {project_name} .", folder): return False
+        if not run_command_with_output(f"django-admin startproject {project_name} .", cwd=folder): return False
         status_message("Django project created.")
 
         if not _create_file_safely(folder / ".env", scaffold_django_template["env"]): return False
@@ -1480,13 +1454,13 @@ def scaffold_spring_boot(folder: Path) -> bool:
 def scaffold_ruby_on_rails(folder: Path) -> bool:
     arrow_message("Scaffolding Ruby on Rails backend...")
     try:
-        if not _run_command("rails new . --api --database=postgresql", folder): return False
+        if not run_command_with_output("rails new . --api --database=postgresql", cwd=folder): return False
         status_message("Rails API project created.")
         if not _create_file_safely(folder / "app" / "controllers" / "api" / "v1" / "greetings_controller.rb", scaffold_ruby_on_rails_template["controller"]): return False
         if not _create_file_safely(folder / "config" / "routes.rb", scaffold_ruby_on_rails_template["routes"]): return False
 
         # Create the database
-        if not _run_command("bundle exec rails db:create", folder):
+        if not run_command_with_output("bundle exec rails db:create", cwd=folder):
             status_message("Warning: Could not create database. Please check your PostgreSQL setup.", False)
 
         status_message("Ruby on Rails backend scaffolded successfully.")
@@ -1498,12 +1472,12 @@ def scaffold_ruby_on_rails(folder: Path) -> bool:
 def scaffold_go_gin(folder: Path) -> bool:
     arrow_message("Scaffolding Go (Gin) backend...")
     try:
-        if not _run_command(f"go mod init {folder.name}", folder): return False
+        if not run_command_with_output(f"go mod init {folder.name}", cwd=folder): return False
         if not _create_file_safely(folder / "main.go", scaffold_go_gin_template["main_go"]): return False
         status_message("Go module initialized and main.go created.")
 
-        if not _run_command("go get -u github.com/gin-gonic/gin", folder): return False
-        if not _run_command("go mod tidy", folder): return False
+        if not run_command_with_output("go get -u github.com/gin-gonic/gin", cwd=folder): return False
+        if not run_command_with_output("go mod tidy", cwd=folder): return False
         status_message("Gin dependency installed.")
 
         status_message("Go (Gin) backend scaffolded successfully.")
@@ -1515,7 +1489,7 @@ def scaffold_go_gin(folder: Path) -> bool:
 def scaffold_aspnet_core(folder: Path) -> bool:
     arrow_message("Scaffolding ASP.NET Core (C#) backend...")
     try:
-        if not _run_command("dotnet new webapi -o . --no-https", folder): return False
+        if not run_command_with_output("dotnet new webapi -o . --no-https", cwd=folder): return False
         status_message("ASP.NET Core Web API project created.")
         status_message("Run 'dotnet run' to start the server.")
         return True

@@ -53,6 +53,47 @@ def choose_stack(project_type: str) -> str | None:
     return stack
 
 
+def display_failed_test_summary(output: str, error_output: str):
+    """Parses and displays a summary of failed test output."""
+    boxed_message("Test Failure Summary")
+
+    combined_output = (output + '\n' + error_output).strip()
+    lines = combined_output.split('\n')
+
+    summary_lines = []
+    error_details = []
+
+    # Keywords to find important summary lines
+    keywords = ['fail', 'error', 'failed', 'tests:', 'summary:']
+
+    for line in lines:
+        line_lower = line.lower()
+        if any(keyword in line_lower for keyword in keywords):
+            summary_lines.append(line)
+        # Symbols used by Jest/Pytest to highlight specific test case errors
+        if line.strip().startswith(('●', '>', 'E ', 'F ', '_')) and 'node_modules' not in line:
+            error_details.append(line)
+
+    if summary_lines:
+        arrow_message("Key Summary Lines:")
+        for line in summary_lines:
+            print(line)
+        print("-" * 20)
+
+    if error_details:
+        arrow_message("Specific Error Details (up to 15 shown):")
+        for line in error_details[:15]:
+            print(line)
+    else:
+        # Fallback if parsing fails, show the beginning of the log
+        arrow_message("Could not parse specific errors. Showing beginning of the full output:")
+        for line in lines[:15]:
+            print(line)
+
+    arrow_message("\n...")
+    arrow_message("Review the full log above for complete context.")
+
+
 def run_scaffolding(stack: str, folder: Path):
     # Get the scaffolder function directly from STACK_CONFIG
     scaffold_function = STACK_CONFIG.get(stack, {}).get('scaffolder')
@@ -722,10 +763,46 @@ def run_tests(data, folder):
 
         elif is_python_based_stack(stack):
             run_python_tests(folder)
-
         else:
-            status_message("Test runner not configured for this stack", False)
-            arrow_message("You can manually run tests in your project folder")
+            # Regular Node.js/React tests
+            cmd = None
+            # Check for test script in package.json as a reliable indicator
+            pkg_json_path = folder / "package.json"
+            test_script_exists = False
+            if pkg_json_path.exists():
+                import json
+                try:
+                    with open(pkg_json_path, 'r') as f:
+                        if "test" in json.load(f).get("scripts", {}):
+                            test_script_exists = True
+                except json.JSONDecodeError:
+                    pass  # Ignore corrupted package.json
+
+            if test_script_exists:
+                # Using 'npm test' is the most universal command
+                cmd = ["npm", "test"]
+            else:
+                status_message("No 'test' script found in package.json.", False)
+                return
+
+            result = subprocess.run(cmd, cwd=folder, capture_output=True, text=True)
+
+            # Check the result
+            if result.returncode == 0:
+                status_message("All tests passed!", True)
+                if result.stdout:
+                    display_test_output(result.stdout)
+            else:
+                status_message("Tests failed!", False)
+                # Print full output first for user to scroll through
+                if result.stdout:
+                    print(result.stdout)
+                if result.stderr:
+                    status_message("Error output:", False)
+                    print(result.stderr)
+
+                # Display the parsed summary
+                display_failed_test_summary(result.stdout, result.stderr)
 
     except Exception as e:
         status_message(f"Error running tests: {e}", False)
@@ -733,14 +810,20 @@ def run_tests(data, folder):
 
 def run_python_tests(folder):
     """Run Python tests using pytest or unittest."""
+    cmd = []
     if (folder / "pytest.ini").exists() or (folder / "tests").exists():
         progress_message("Running pytest...")
-        result = subprocess.run(["python", "-m", "pytest", "-v"],
-                                cwd=folder, capture_output=True, text=True)
+        # Add -v for verbosity to get more details on failure
+        cmd = ["python", "-m", "pytest", "-v"]
     else:
         progress_message("Running unittest...")
-        result = subprocess.run(["python", "-m", "unittest", "discover", "tests"],
-                                cwd=folder, capture_output=True, text=True)
+        cmd = ["python", "-m", "unittest", "discover", "tests"]
+
+    if not cmd:
+        status_message("No Python test setup (pytest.ini or /tests folder) found.", False)
+        return
+
+    result = subprocess.run(cmd, cwd=folder, capture_output=True, text=True)
 
     if result.returncode == 0:
         status_message("Python tests passed!", True)
@@ -748,9 +831,15 @@ def run_python_tests(folder):
             display_test_output(result.stdout)
     else:
         status_message("Python tests failed!", False)
+        # Print full output for context
+        # For pytest/unittest, the primary error report is often in stderr
         if result.stderr:
-            status_message("Error output:", False)
-            arrow_message(result.stderr.strip())
+            print(result.stderr)
+        if result.stdout:
+            print(result.stdout)
+
+        # Display the parsed summary from both stdout and stderr
+        display_failed_test_summary(result.stdout, result.stderr)
 
 
 def display_test_output(output):

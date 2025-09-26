@@ -53,7 +53,7 @@ def run_dev_server(data, folder):
             return
 
     arrow_message(f"Detected command: {' '.join(server_config['command'])}")
-    arrow_message(f"Server URL: {server_config['url']}")
+    arrow_message(f"Server URL: {server_config['url'] or 'Not Applicable'}")
 
     # Offer different ways to run the server
     run_options = [
@@ -70,7 +70,7 @@ def run_dev_server(data, folder):
     elif "Foreground" in choice:
         run_server_foreground(server_config)
     elif "New Terminal" in choice:
-        run_server_new_terminal(server_config)
+        run_server_new_terminal(server_config, data)
     else:
         return
 
@@ -119,6 +119,11 @@ def run_server_background(server_config, data):
                     if process.poll() is not None:
                         break
 
+                    if not server_url:  # Handle cases where there's no server to poll
+                        time.sleep(2)  # Assume it's ready after a short delay
+                        server_ready = True
+                        break
+
                     try:
                         # Attempt to make a request to the server URL
                         response = requests.get(server_url, timeout=1)
@@ -137,14 +142,16 @@ def run_server_background(server_config, data):
                 if server_ready and process.poll() is None:  # Process is running and responding
                     status_message("Development server started successfully!", True)
                     arrow_message(f"Process ID: {process.pid}")
-                    arrow_message(f"Server URL: {server_url}")
+                    if server_url:
+                        arrow_message(f"Server URL: {server_url}")
                     arrow_message("Use 'Manage Running Services' to control the server.")
 
                     # Ask if user wants to open browser
-                    open_browser_choice = Question("Would you like to open the application in your browser?",
-                                                   ["Yes", "No"]).ask()
-                    if open_browser_choice == "Yes":
-                        open_browser_url(server_url)
+                    if server_url:
+                        open_browser_choice = Question("Would you like to open the application in your browser?",
+                                                       ["Yes", "No"]).ask()
+                        if open_browser_choice == "Yes":
+                            open_browser_url(server_url)
                 else:
                     # Process failed to start or did not respond in time
                     try:
@@ -175,6 +182,7 @@ def run_server_background(server_config, data):
     except Exception as e:
         status_message(f"Failed to start development server: {e}", False)
 
+
 def run_server_foreground(server_config):
     """Run development server in foreground (blocking)."""
     command = server_config['command']
@@ -202,7 +210,7 @@ def run_server_foreground(server_config):
         status_message(f"Error running development server: {e}", False)
 
 
-def run_server_new_terminal(server_config):
+def run_server_new_terminal(server_config, data):
     """Open development server in a new terminal window."""
     command = server_config['command']
     folder = server_config['working_dir']
@@ -264,7 +272,7 @@ def run_server_new_terminal(server_config):
         status_message(f"Failed to open new terminal: {e}", False)
         status_message("Falling back to background execution...", True)
         time.sleep(2)
-        run_server_background(server_config, {})
+        run_server_background(server_config, data)
 
 
 def server_management_menu(data, folder):
@@ -321,7 +329,7 @@ def check_server_status():
             status_message("Development server is running", True)
             arrow_message(f"Project: {process_info.get('project_name', 'Unknown')}")
             arrow_message(f"Process ID: {process.pid}")
-            arrow_message(f"Server URL: {process_info.get('url', 'Unknown')}")
+            arrow_message(f"Server URL: {process_info.get('url', 'N/A')}")
             arrow_message(f"Working Directory: {process_info.get('folder', 'Unknown')}")
             rich_message(f"Command: {' '.join(process_info.get('command', []))}", False)
 
@@ -338,9 +346,7 @@ def check_server_status():
                 pass  # Process might not exist anymore
 
         else:
-            status_message("Development server process has stopped", False)
-            # Clean up dead process
-            del running_processes['dev_server']
+            status_message("Development server process has stopped. The status will update in the menu.", False)
     else:
         status_message("No development server process found", False)
 
@@ -398,7 +404,11 @@ def open_browser_from_menu():
         status_message("Development server is not running", False)
         return
 
-    url = process_info.get('url', 'http://localhost:3000')
+    url = process_info.get('url')
+    if not url:
+        status_message("Server URL is not configured for this project.", False)
+        return
+
     open_browser_url(url)
 
 
@@ -483,7 +493,7 @@ def show_project_info(data, folder):
     if 'dev_server' in running_processes and running_processes['dev_server']['process'].poll() is None:
         status_message("Development server is currently running")
         server_info = running_processes['dev_server']
-        arrow_message(f"Server URL: {server_info.get('url', 'Unknown')}")
+        arrow_message(f"Server URL: {server_info.get('url', 'N/A')}")
         arrow_message(f"Process ID: {server_info['process'].pid}")
     else:
         status_message("Development server is not running", False)
@@ -524,15 +534,14 @@ def signal_handler(_sig, _frame):
 
 signal.signal(signal.SIGINT, signal_handler)
 if hasattr(signal, 'SIGTERM'):
-    signal.signal(signal.SIGTERM, signal_handler)# Add these imports to your cli.py file
-
+    signal.signal(signal.SIGTERM, signal_handler)
 
 
 def detect_server_config(folder: Path, stack: str) -> dict:
     """Detect server configuration based on the centralized STACK_CONFIG."""
     config: Any = {
         'command': None,
-        'url': 'http://localhost:3000',
+        'url': None,
         'working_dir': folder,
         'env_vars': {}
     }
@@ -554,32 +563,32 @@ def detect_server_config(folder: Path, stack: str) -> dict:
     if stack_info.get("env_vars"):
         config['env_vars'] = stack_info["env_vars"]
 
-    # Special handling for Python projects to use virtual environment
+    # Special handling for Python projects to use the virtual environment
     if stack_info.get("language") == "python" and (folder / "venv").exists():
-        if platform.system() == "Windows":
-            python_path = folder / "venv" / "Scripts" / "python.exe"
-            # For commands like 'flask', we don't need to prepend the python path
-            if config['command'][0] not in ['flask']:
-                 config['command'] = [str(python_path)] + config['command'][1:]
-        else:
-            python_path = folder / "venv" / "bin" / "python"
-            if config['command'][0] not in ['flask']:
-                config['command'] = [str(python_path)] + config['command'][1:]
+        python_exe = "python.exe" if platform.system() == "Windows" else "python"
+        python_path_str = str(folder / "venv" / ("Scripts" if platform.system() == "Windows" else "bin") / python_exe)
+
+        cmd = config['command']
+        if cmd[0] == 'python':
+            # Replace 'python' with the full path to the venv python
+            config['command'] = [python_path_str] + cmd[1:]
+        elif cmd[0] == 'flask':
+            # Convert 'flask run' to '/path/to/venv/python -m flask run'
+            config['command'] = [python_path_str, '-m'] + cmd
 
     # For full-stack projects, the dev command is usually run from the root
     if stack_info.get("project_type") == "Fullstack":
-         if (folder / "frontend").exists() and (folder / "backend").exists():
-              # The 'npm run dev' command is correctly set from STACK_CONFIG
-              pass
-         else: # We are likely in a subdirectory, fall back to language detection
-              if (folder / "package.json").exists(): # Likely frontend
-                   config['command'] = ["npm", "run", "dev"]
-                   config['url'] = f'http://localhost:{stack_info["dev_port"]}'
-              elif (folder / "app.py").exists() or (folder / "manage.py").exists(): # Likely backend
-                  # Re-run detection for the specific backend part
-                  if "Flask" in stack:
-                      return detect_server_config(folder, "Flask (Python)")
-                  # Add other fullstack backend types if necessary
+        if (folder / "frontend").exists() and (folder / "backend").exists():
+            # The 'npm run dev' command is correctly set from STACK_CONFIG
+            pass
+        else:  # We are likely in a subdirectory, fall back to language detection
+            if (folder / "package.json").exists():  # Likely frontend
+                config['command'] = ["npm", "run", "dev"]
+                config['url'] = f'http://localhost:{stack_info["dev_port"]}'
+            elif (folder / "app.py").exists() or (folder / "manage.py").exists():  # Likely backend
+                # Re-run detection for the specific backend part
+                if "Flask" in stack:
+                    return detect_server_config(folder, "Flask (Python)")
+                # Add other fullstack backend types if necessary
 
     return config
-
