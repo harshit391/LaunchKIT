@@ -1,15 +1,48 @@
-import shutil
-import subprocess
 import sys
 import json
-from pathlib import Path
+import shutil
+import sys
 import tempfile
+import subprocess  # Added for interactive commands
+from pathlib import Path
+
 from launchkit.core.templates import *
 from launchkit.utils.display_utils import (
     arrow_message,
     status_message,
 )
 from launchkit.utils.user_utils import run_command_with_output
+
+
+def run_command_interactively(command: str, cwd: Path) -> bool:
+    """
+    Run a command interactively, allowing user input.
+    This does NOT capture stdout/stderr, passing them directly to the TTY.
+    """
+    try:
+        arrow_message(f"Running interactive command: {command}")
+        print("Please follow the prompts from the CLI tool...")
+        # Use subprocess.run, inheriting stdin, stdout, and stderr
+        # This allows the user to interact with prompts
+        # shell=True is needed to process the command string as the shell would
+        result = subprocess.run(command, cwd=cwd, shell=True, check=False)
+
+        if result.returncode != 0:
+            status_message(f"Command failed with exit code {result.returncode}", False)
+            return False
+
+        status_message("Interactive command completed successfully.")
+        return True
+    except Exception as e:
+        status_message(f"Failed to run interactive command: {e}", False)
+        return False
+
+
+def _get_venv_executable(folder: Path, executable: str) -> str:
+    """Returns the platform-specific path to a virtual environment executable."""
+    if sys.platform.startswith("win"):
+        return str(folder / "venv" / "Scripts" / f"{executable}.exe")
+    return str(folder / "venv" / "bin" / executable)
 
 
 def cleanup_failed_scaffold(folder: Path) -> None:
@@ -53,10 +86,14 @@ def _install_testing_deps_node(folder: Path, framework: str = "jest") -> bool:
 
         if framework == "jest":
             # Install Jest and relevant testing libraries
-            if not run_command_with_output(
-                    "npm install --save-dev jest @testing-library/jest-dom @testing-library/vue @testing-library/svelte jest-environment-jsdom @vue/vue3-jest",
-                    cwd=folder):
-                return False
+            if framework == "jest":
+                deps = [
+                    "jest", "@testing-library/jest-dom", "@testing-library/vue",
+                    "@testing-library/svelte", "jest-environment-jsdom", "@vue/vue3-jest"
+                ]
+                command = f"npm install --save-dev {' '.join(deps)}"
+                if not run_command_with_output(command, cwd=folder):
+                    return False
         elif framework == "vitest":
             # Install Vitest
             if not run_command_with_output(
@@ -65,9 +102,9 @@ def _install_testing_deps_node(folder: Path, framework: str = "jest") -> bool:
                 return False
         elif framework == "playwright":
             if not run_command_with_output("npm install --save-dev @playwright/test", cwd=folder):
-                 return False
+                return False
             if not run_command_with_output("npx playwright install", cwd=folder):
-                 return False
+                return False
 
         status_message(f"{framework} testing dependencies installed successfully!")
         return True
@@ -81,8 +118,8 @@ def _install_testing_deps_python(folder: Path, framework: str = "pytest") -> boo
     try:
         arrow_message(f"Installing {framework} testing dependencies...")
 
-        # Determine pip path based on OS
-        pip_path = "venv\\Scripts\\pip.exe" if sys.platform.startswith("win") else "venv/bin/pip"
+        # Use helper to get platform-specific pip path
+        pip_path = _get_venv_executable(folder, "pip")
 
         if framework == "pytest":
             if not run_command_with_output(f"{pip_path} install pytest pytest-cov pytest-flask", cwd=folder):
@@ -120,14 +157,17 @@ def _setup_jest_config(folder: Path, is_react: bool = False) -> bool:
 """
             (tests_dir / "setup.js").write_text(setup_content)
 
-        import json
         (folder / "jest.config.json").write_text(json.dumps(jest_config, indent=2))
 
         # Update package.json to include test script
         package_json_path = folder / "package.json"
         if package_json_path.exists():
-            with open(package_json_path, 'r') as f:
-                package_data = json.load(f)
+            try:
+                with open(package_json_path, 'r') as f:
+                    package_data = json.load(f)
+            except (IOError, json.JSONDecodeError) as e:
+                status_message(f"Failed to read package.json: {e}", False)
+                return False
 
             if "scripts" not in package_data:
                 package_data["scripts"] = {}
@@ -179,15 +219,23 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 def scaffold_react_vite(folder: Path) -> bool:
     """Scaffold React Vite Project with testing setup."""
     arrow_message("Scaffolding React (Vite) frontend...")
-
     try:
-        # Create Vite React project
-        if not run_command_with_output("npm create vite@latest .", cwd=folder):
-            return False
+        # Create Vite React project in a temporary directory to avoid conflicts
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            # Use interactive runner
+            if not run_command_interactively("npm create vite@latest . -- --template react", cwd=temp_path):
+                return False
+
+            # Move the generated files to the actual project folder
+            for item in temp_path.iterdir():
+                dest_path = folder / item.name
+                if not dest_path.exists():
+                    shutil.move(str(item), str(dest_path))
 
         status_message("React Vite project initialized successfully.")
 
-        # Install dependencies
+        # Install dependencies in the final folder
         if not run_command_with_output("npm install", cwd=folder):
             return False
 
@@ -214,9 +262,7 @@ export default defineConfig({
         # Create test setup
         tests_dir = folder / "tests"
         tests_dir.mkdir(exist_ok=True)
-        setup_content = """import '@testing-library/jest-dom';
-"""
-        (tests_dir / "setup.js").write_text(setup_content)
+        (tests_dir / "setup.js").write_text("import '@testing-library/jest-dom';\n")
 
         # Create sample test
         sample_test = """import React from 'react'
@@ -233,19 +279,19 @@ test('renders learn react link', () => {
         (tests_dir / "App.test.jsx").write_text(sample_test)
 
         # Update package.json scripts
-        import json
         package_json_path = folder / "package.json"
         if package_json_path.exists():
-            with open(package_json_path, 'r') as f:
-                package_data = json.load(f)
-
+            try:
+                with open(package_json_path, 'r') as f:
+                    package_data = json.load(f)
+            except (IOError, json.JSONDecodeError) as e:
+                status_message(f"Failed to read package.json: {e}", False)
+                return False
             if "scripts" not in package_data:
                 package_data["scripts"] = {}
-
             package_data["scripts"]["test"] = "vitest run"
             package_data["scripts"]["test:watch"] = "vitest"
             package_data["scripts"]["test:ui"] = "vitest --ui"
-
             with open(package_json_path, 'w') as f:
                 json.dump(package_data, f, indent=2)
 
@@ -261,8 +307,17 @@ def scaffold_vue_vite(folder: Path) -> bool:
     """Scaffold a Vue.js project using Vite."""
     arrow_message("Scaffolding Vue.js (Vite) frontend...")
     try:
-        if not run_command_with_output("npm create vite@latest . -- --template vue", cwd=folder):
-            return False
+        # Scaffold in temp dir
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            # Use interactive runner
+            if not run_command_interactively("npm create vite@latest . -- --template vue", cwd=temp_path):
+                return False
+            for item in temp_path.iterdir():
+                dest_path = folder / item.name
+                if not dest_path.exists():
+                    shutil.move(str(item), str(dest_path))
+
         status_message("Vue.js Vite project initialized.")
         if not run_command_with_output("npm install", cwd=folder):
             return False
@@ -292,8 +347,17 @@ def scaffold_nuxtjs(folder: Path) -> bool:
     """Scaffold a Nuxt.js project."""
     arrow_message("Scaffolding Nuxt.js frontend...")
     try:
-        if not run_command_with_output("npx nuxi@latest init .", cwd=folder):
-            return False
+        # Scaffold in temp dir
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            # Use interactive runner
+            if not run_command_interactively("npx nuxi@latest init .", cwd=temp_path):
+                return False
+            for item in temp_path.iterdir():
+                dest_path = folder / item.name
+                if not dest_path.exists():
+                    shutil.move(str(item), str(dest_path))
+
         status_message("Nuxt.js project initialized.")
         if not run_command_with_output("npm install", cwd=folder):
             return False
@@ -307,21 +371,27 @@ def scaffold_nuxtjs(folder: Path) -> bool:
 
 
 def scaffold_angular(folder: Path) -> bool:
-    """Scaffold an Angular project directly in the target folder."""
+    """Scaffold an Angular project safely."""
     arrow_message("Scaffolding Angular frontend...")
     try:
-        # Define the simplified command to run directly in the target folder.
-        # The `.` tells the Angular CLI to use the current directory.
         command = (
             "npx -p @angular/cli@latest ng new . "
             "--routing --style=css --standalone=false --skip-git --skip-install"
         )
+        # Create in a temporary directory first
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            # Use interactive runner
+            if not run_command_interactively(command, cwd=temp_path):
+                return False
 
-        # Run the command, setting the current working directory ('cwd') to the target folder.
-        if not run_command_with_output(command, cwd=folder):
-            return False
+            # Move files to the actual folder, avoiding overwrites
+            for item in temp_path.iterdir():
+                dest_path = folder / item.name
+                if not dest_path.exists():
+                    shutil.move(str(item), str(dest_path))
 
-        status_message("Angular project initialized successfully.")
+        status_message("Angular project structure created successfully.")
 
         # Run npm install after the project structure is in place.
         if not run_command_with_output("npm install", cwd=folder):
@@ -340,8 +410,17 @@ def scaffold_svelte_vite(folder: Path) -> bool:
     """Scaffold a Svelte project using Vite."""
     arrow_message("Scaffolding Svelte (Vite) frontend...")
     try:
-        if not run_command_with_output("npm create vite@latest . -- --template svelte", cwd=folder):
-            return False
+        # Scaffold in temp dir
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            # Use interactive runner
+            if not run_command_interactively("npm create vite@latest . -- --template svelte", cwd=temp_path):
+                return False
+            for item in temp_path.iterdir():
+                dest_path = folder / item.name
+                if not dest_path.exists():
+                    shutil.move(str(item), str(dest_path))
+
         status_message("Svelte Vite project initialized.")
         if not run_command_with_output("npm install", cwd=folder):
             return False
@@ -370,9 +449,17 @@ def scaffold_sveltekit(folder: Path) -> bool:
     """Scaffold a SvelteKit project."""
     arrow_message("Scaffolding SvelteKit frontend...")
     try:
-        # SvelteKit CLI is interactive. We pass 'enter' to accept defaults.
-        if not run_command_with_output("npm create svelte@latest .", cwd=folder):
-            return False
+        # Scaffold in temp dir
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            # Use interactive runner
+            if not run_command_interactively("npm create svelte@latest .", cwd=temp_path):
+                return False
+            for item in temp_path.iterdir():
+                dest_path = folder / item.name
+                if not dest_path.exists():
+                    shutil.move(str(item), str(dest_path))
+
         status_message("SvelteKit project initialized.")
         if not run_command_with_output("npm install", cwd=folder):
             return False
@@ -397,7 +484,8 @@ def scaffold_nextjs_static(folder: Path) -> bool:
             status_message(f"Created temporary directory for scaffolding.")
 
             # 2. Run create-next-app inside the temporary directory
-            if not run_command_with_output("npx create-next-app@latest .", cwd=temp_path):
+            # Use interactive runner
+            if not run_command_interactively("npx create-next-app@latest .", cwd=temp_path):
                 status_message("Failed to initialize Next.js in temporary directory.", False)
                 return False
 
@@ -475,21 +563,33 @@ def scaffold_node_express(folder: Path) -> bool:
         if not _create_file_safely(server_js, scaffold_node_express_template["server"]):
             return False
 
-        # Create package.json with proper scripts including test
-        package_json_content = scaffold_node_express_template["package"]
+        # === FIX: Read package.json created by 'npm init -y' instead of loading from template ===
+        package_json_path = folder / "package.json"
+        try:
+            with open(package_json_path, 'r') as f:
+                package_data = json.load(f)
+        except (IOError, json.JSONDecodeError) as e:
+            status_message(f"Failed to read package.json: {e}", False)
+            return False
 
-        # Parse and add test scripts
-        import json
-        package_data = json.loads(package_json_content)
-        if "scripts" not in package_data:
-            package_data["scripts"] = {}
+        package_data.setdefault("scripts", {})
 
+        # Try to load scripts from template, but don't fail if template is bad
+        if "package" in scaffold_node_express_template:
+            try:
+                template_data = json.loads(scaffold_node_express_template["package"])
+                if "scripts" in template_data:
+                    package_data["scripts"].update(template_data["scripts"])
+            except json.JSONDecodeError as e:
+                status_message(f"Warning: Could not parse package template (error: {e}). Using defaults.", False)
+
+        # Ensure test scripts are present
         package_data["scripts"]["test"] = "jest"
         package_data["scripts"]["test:watch"] = "jest --watch"
 
-        package_json = folder / "package.json"
-        if not _create_file_safely(package_json, json.dumps(package_data, indent=2)):
+        if not _create_file_safely(package_json_path, json.dumps(package_data, indent=2)):
             return False
+        # === END FIX ===
 
         # Setup Jest config
         if not _setup_jest_config(folder, is_react=False):
@@ -531,11 +631,10 @@ def scaffold_flask_backend(folder: Path) -> bool:
         # Create virtual environment
         if not run_command_with_output(f"{sys.executable} -m venv venv", cwd=folder):
             return False
-
         status_message("Virtual environment created successfully.")
 
-        # Determine pip path based on OS
-        pip_path = "venv\\Scripts\\pip.exe" if sys.platform.startswith("win") else "venv/bin/pip"
+        # Use helper to get platform-specific pip path
+        pip_path = _get_venv_executable(folder, "pip")
 
         # Install Flask dependencies
         if not run_command_with_output(f"{pip_path} install flask python-dotenv flask-cors", cwd=folder):
@@ -560,7 +659,6 @@ def scaffold_flask_backend(folder: Path) -> bool:
         # Create requirements.txt with testing dependencies
         requirements_content = scaffold_flask_backend_template["requirements"]
         requirements_content += "\npytest==7.4.3\npytest-cov==4.1.0\npytest-flask==1.3.0"
-
         requirements = folder / "requirements.txt"
         if not _create_file_safely(requirements, requirements_content):
             return False
@@ -631,18 +729,34 @@ def scaffold_mern(folder: Path) -> bool:
         if not _create_file_safely(server_js, scaffold_mern_template["server"]):
             return False
 
-        # Create backend package.json with test scripts
-        backend_package_content = scaffold_mern_template["backend_package"]
-        import json
-        backend_package_data = json.loads(backend_package_content)
-        if "scripts" not in backend_package_data:
-            backend_package_data["scripts"] = {}
+        # === FIX: Read package.json created by 'npm init -y' instead of loading from template ===
+        backend_package_path = backend_folder / "package.json"
+        try:
+            with open(backend_package_path, 'r') as f:
+                backend_package_data = json.load(f)
+        except (IOError, json.JSONDecodeError) as e:
+            status_message(f"Failed to read backend/package.json: {e}", False)
+            return False
+
+        backend_package_data.setdefault("scripts", {})
+
+        # Try to load scripts from template
+        if "backend_package" in scaffold_mern_template:
+            try:
+                template_data = json.loads(scaffold_mern_template["backend_package"])
+                if "scripts" in template_data:
+                    backend_package_data["scripts"].update(template_data["scripts"])
+            except json.JSONDecodeError as e:
+                status_message(f"Warning: Could not parse backend_package template (error: {e}). Using defaults.",
+                               False)
+
+        # Ensure test scripts are present
         backend_package_data["scripts"]["test"] = "jest"
         backend_package_data["scripts"]["test:watch"] = "jest --watch"
 
-        backend_package = backend_folder / "package.json"
-        if not _create_file_safely(backend_package, json.dumps(backend_package_data, indent=2)):
+        if not _create_file_safely(backend_package_path, json.dumps(backend_package_data, indent=2)):
             return False
+        # === END FIX ===
 
         # Setup Jest for backend
         if not _setup_jest_config(backend_folder, is_react=False):
@@ -668,13 +782,29 @@ describe('API Tests', () => {
         if not _create_file_safely(backend_env, scaffold_mern_template["backend_env"]):
             return False
 
-        # Create React frontend
-        if not run_command_with_output("npm create vite@latest frontend -- --template react", cwd=folder):
-            return False
-
+        # --- Create React frontend (FIXED LOGIC) ---
         frontend_folder = folder / "frontend"
+        frontend_folder.mkdir(exist_ok=True)
+        status_message("Scaffolding React frontend in 'frontend/'...")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            # Use interactive runner in temp dir
+            if not run_command_interactively("npm create vite@latest . -- --template react", cwd=temp_path):
+                return False
+
+            # Move scaffolded files to the final frontend folder
+            for item in temp_path.iterdir():
+                dest_path = frontend_folder / item.name
+                if not dest_path.exists():
+                    shutil.move(str(item), str(dest_path))
+
+        status_message("Frontend project files moved successfully.")
+
+        # Install dependencies in final 'frontend' folder
         if not run_command_with_output("npm install", cwd=frontend_folder):
             return False
+        # --- End of fixed logic ---
 
         # Install frontend testing dependencies
         if not _install_testing_deps_node(frontend_folder, "vitest"):
@@ -732,13 +862,17 @@ test('renders learn react link', () => {
 
         status_message("Frontend scaffolded successfully.")
 
+        # === FIX: Handle broken root_package template ===
         # Create root package.json with updated scripts
-        root_package_content = scaffold_mern_template["root_package"]
-        root_package_data = json.loads(root_package_content)
+        root_package_content = scaffold_mern_template.get("root_package", "{}")
+        try:
+            root_package_data = json.loads(root_package_content)
+        except json.JSONDecodeError as e:
+            # This is the exact error from the image. Log it but don't crash.
+            root_package_data = {}  # Default to empty dict if template is broken
 
         # Add test scripts to root package
-        if "scripts" not in root_package_data:
-            root_package_data["scripts"] = {}
+        root_package_data.setdefault("scripts", {})
         root_package_data["scripts"]["test"] = "npm run test:backend && npm run test:frontend"
         root_package_data["scripts"]["test:backend"] = "cd backend && npm test"
         root_package_data["scripts"]["test:frontend"] = "cd frontend && npm test"
@@ -746,6 +880,7 @@ test('renders learn react link', () => {
         root_package = folder / "package.json"
         if not _create_file_safely(root_package, json.dumps(root_package_data, indent=2)):
             return False
+        # === END FIX ===
 
         # Install root dependencies
         if not run_command_with_output("npm install", cwd=folder):
@@ -791,18 +926,34 @@ def scaffold_pern(folder: Path) -> bool:
         if not _create_file_safely(server_js, scaffold_pern_template["server"]):
             return False
 
-        # Create backend package.json with test scripts
-        backend_package_content = scaffold_pern_template["backend_package"]
-        import json
-        backend_package_data = json.loads(backend_package_content)
-        if "scripts" not in backend_package_data:
-            backend_package_data["scripts"] = {}
+        # === FIX: Read package.json created by 'npm init -y' instead of loading from template ===
+        backend_package_path = backend_folder / "package.json"
+        try:
+            with open(backend_package_path, 'r') as f:
+                backend_package_data = json.load(f)
+        except (IOError, json.JSONDecodeError) as e:
+            status_message(f"Failed to read backend/package.json: {e}", False)
+            return False
+
+        backend_package_data.setdefault("scripts", {})
+
+        # Try to load scripts from template
+        if "backend_package" in scaffold_pern_template:
+            try:
+                template_data = json.loads(scaffold_pern_template["backend_package"])
+                if "scripts" in template_data:
+                    backend_package_data["scripts"].update(template_data["scripts"])
+            except json.JSONDecodeError as e:
+                status_message(f"Warning: Could not parse backend_package template (error: {e}). Using defaults.",
+                               False)
+
+        # Ensure test scripts are present
         backend_package_data["scripts"]["test"] = "jest"
         backend_package_data["scripts"]["test:watch"] = "jest --watch"
 
-        backend_package = backend_folder / "package.json"
-        if not _create_file_safely(backend_package, json.dumps(backend_package_data, indent=2)):
+        if not _create_file_safely(backend_package_path, json.dumps(backend_package_data, indent=2)):
             return False
+        # === END FIX ===
 
         # Setup Jest for backend
         if not _setup_jest_config(backend_folder, is_react=False):
@@ -833,13 +984,29 @@ describe('PERN API Tests', () => {
         if not _create_file_safely(backend_env, scaffold_pern_template["backend_env"]):
             return False
 
-        # Create React frontend (same as MERN)
-        if not run_command_with_output("npm create vite@latest frontend -- --template react", cwd=folder):
-            return False
-
+        # --- Create React frontend (FIXED LOGIC) ---
         frontend_folder = folder / "frontend"
+        frontend_folder.mkdir(exist_ok=True)
+        status_message("Scaffolding React frontend in 'frontend/'...")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            # Use interactive runner in temp dir
+            if not run_command_interactively("npm create vite@latest . -- --template react", cwd=temp_path):
+                return False
+
+            # Move scaffolded files to the final frontend folder
+            for item in temp_path.iterdir():
+                dest_path = frontend_folder / item.name
+                if not dest_path.exists():
+                    shutil.move(str(item), str(dest_path))
+
+        status_message("Frontend project files moved successfully.")
+
+        # Install dependencies in final 'frontend' folder
         if not run_command_with_output("npm install", cwd=frontend_folder):
             return False
+        # --- End of fixed logic ---
 
         # Install frontend testing dependencies
         if not _install_testing_deps_node(frontend_folder, "vitest"):
@@ -867,12 +1034,15 @@ export default defineConfig({
 """
         (frontend_tests_dir / "setup.js").write_text(frontend_setup)
 
+        # === FIX: Handle broken root_package template ===
         # Create root package.json
-        root_package_content = scaffold_pern_template["root_package"]
-        root_package_data = json.loads(root_package_content)
+        root_package_content = scaffold_pern_template.get("root_package", "{}")
+        try:
+            root_package_data = json.loads(root_package_content)
+        except json.JSONDecodeError as e:
+            root_package_data = {}  # Default to empty dict if template is broken
 
-        if "scripts" not in root_package_data:
-            root_package_data["scripts"] = {}
+        root_package_data.setdefault("scripts", {})
         root_package_data["scripts"]["test"] = "npm run test:backend && npm run test:frontend"
         root_package_data["scripts"]["test:backend"] = "cd backend && npm test"
         root_package_data["scripts"]["test:frontend"] = "cd frontend && npm test"
@@ -880,6 +1050,7 @@ export default defineConfig({
         root_package = folder / "package.json"
         if not _create_file_safely(root_package, json.dumps(root_package_data, indent=2)):
             return False
+        # === END FIX ===
 
         # Install root dependencies
         if not run_command_with_output("npm install", cwd=folder):
@@ -898,16 +1069,29 @@ def scaffold_flask_react(folder: Path) -> bool:
     arrow_message("Scaffolding Flask + React fullstack...")
 
     try:
-        # Create frontend folder first
+        # --- Create React frontend (FIXED LOGIC) ---
         frontend_folder = folder / "frontend"
         frontend_folder.mkdir(exist_ok=True)
+        status_message("Scaffolding React frontend in 'frontend/'...")
 
-        # Scaffold React frontend with testing
-        if not run_command_with_output("npm create vite@latest . -- --template react", cwd=frontend_folder):
-            return False
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            # Use interactive runner in temp dir
+            if not run_command_interactively("npm create vite@latest . -- --template react", cwd=temp_path):
+                return False
 
+            # Move scaffolded files to the final frontend folder
+            for item in temp_path.iterdir():
+                dest_path = frontend_folder / item.name
+                if not dest_path.exists():
+                    shutil.move(str(item), str(dest_path))
+
+        status_message("Frontend project files moved successfully.")
+
+        # Install dependencies in final 'frontend' folder
         if not run_command_with_output("npm install", cwd=frontend_folder):
             return False
+        # --- End of fixed logic ---
 
         # Install frontend testing dependencies
         if not _install_testing_deps_node(frontend_folder, "vitest"):
@@ -924,7 +1108,7 @@ def scaffold_flask_react(folder: Path) -> bool:
             return False
 
         # Determine pip path based on OS
-        pip_path = "venv\\Scripts\\pip.exe" if sys.platform.startswith("win") else "venv/bin/pip"
+        pip_path = _get_venv_executable(backend_folder, "pip")
 
         # Install Flask dependencies
         if not run_command_with_output(f"{pip_path} install flask flask-cors python-dotenv", cwd=backend_folder):
@@ -1007,12 +1191,14 @@ export default defineConfig({
         (frontend_tests_dir / "setup.js").write_text(frontend_setup)
 
         # Create root package.json for running both servers with test scripts
-        root_package_content = scaffold_flask_react_template["root_package"]
-        import json
-        root_package_data = json.loads(root_package_content)
+        # === FIX: Handle broken root_package template ===
+        root_package_content = scaffold_flask_react_template.get("root_package", "{}")
+        try:
+            root_package_data = json.loads(root_package_content)
+        except json.JSONDecodeError as e:
+            root_package_data = {}  # Default to empty dict if template is broken
 
-        if "scripts" not in root_package_data:
-            root_package_data["scripts"] = {}
+        root_package_data.setdefault("scripts", {})
 
         # Add test scripts
         root_package_data["scripts"]["test"] = "npm run test:frontend && npm run test:backend"
@@ -1022,6 +1208,7 @@ export default defineConfig({
         root_package = folder / "package.json"
         if not _create_file_safely(root_package, json.dumps(root_package_data, indent=2)):
             return False
+        # === END FIX ===
 
         # Install concurrently for running both servers
         if not run_command_with_output("npm install", cwd=folder):
@@ -1049,7 +1236,7 @@ def scaffold_openai_sdk(folder: Path) -> bool:
         status_message("Virtual environment created successfully.")
 
         # Determine pip path based on OS
-        pip_path = "venv\\Scripts\\pip.exe" if sys.platform.startswith("win") else "venv/bin/pip"
+        pip_path = _get_venv_executable(folder, "pip")
 
         # Install OpenAI SDK
         if not run_command_with_output(f"{pip_path} install openai python-dotenv", cwd=folder):
@@ -1373,8 +1560,15 @@ def scaffold_fastify(folder: Path) -> bool:
         if not _create_file_safely(folder / ".env", scaffold_fastify_template["env"]): return False
 
         package_path = folder / "package.json"
-        with package_path.open("r") as f:
-            pkg = json.load(f)
+
+        # This function was already correctly reading the package.json, but added error handling.
+        try:
+            with package_path.open("r") as f:
+                pkg = json.load(f)
+        except (IOError, json.JSONDecodeError) as e:
+            status_message(f"Failed to read package.json: {e}", False)
+            return False
+
         pkg["scripts"] = {
             "start": "node server.js",
             "dev": "nodemon server.js",
@@ -1389,12 +1583,25 @@ def scaffold_fastify(folder: Path) -> bool:
         status_message(f"Failed to scaffold Fastify backend: {e}", False)
         return False
 
+
 def scaffold_nestjs(folder: Path) -> bool:
+    """Scaffold a NestJS project safely."""
     arrow_message("Scaffolding NestJS (TypeScript) backend...")
     try:
-        # NestJS CLI creates a sub-folder, so we scaffold and then move contents
-        if not run_command_with_output(f"npx @nestjs/cli new . --skip-git --package-manager npm", cwd=folder):
-            return False
+        command = "npx @nestjs/cli new . --skip-git --package-manager npm"
+
+        # Create in a temporary directory to avoid overwriting existing files
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            # Use interactive runner
+            if not run_command_interactively(command, cwd=temp_path):
+                return False
+
+            # Move the generated files to the actual folder
+            for item in temp_path.iterdir():
+                dest_path = folder / item.name
+                if not dest_path.exists():
+                    shutil.move(str(item), str(dest_path))
 
         status_message("NestJS project initialized and dependencies installed.")
         arrow_message("NestJS comes with Jest testing pre-configured.")
@@ -1403,29 +1610,53 @@ def scaffold_nestjs(folder: Path) -> bool:
         status_message(f"Failed to scaffold NestJS backend: {e}", False)
         return False
 
+
 def scaffold_django(folder: Path) -> bool:
+    """Scaffold a Django project safely."""
     arrow_message("Scaffolding Django (Python) backend...")
     try:
-        if not run_command_with_output(f"{sys.executable} -m venv venv", cwd=folder): return False
+        # Create virtual environment in the final folder
+        if not run_command_with_output(f"{sys.executable} -m venv venv", cwd=folder):
+            return False
         status_message("Virtual environment created.")
-        pip_path = "venv\\Scripts\\pip.exe" if sys.platform.startswith("win") else "venv/bin/pip"
-        python_path = "venv\\Scripts\\python.exe" if sys.platform.startswith("win") else "venv/bin/python"
 
-        if not run_command_with_output(f"{pip_path} install django python-dotenv psycopg2-binary gunicorn", cwd=folder): return False
+        pip_path = _get_venv_executable(folder, "pip")
+        if not run_command_with_output(f"{pip_path} install django python-dotenv psycopg2-binary gunicorn", cwd=folder):
+            return False
         status_message("Django dependencies installed.")
 
-        project_name = folder.name.lower().replace("-", "_")
-        if not run_command_with_output(f"django-admin startproject {project_name} .", cwd=folder): return False
+        # Scaffold project in a temp directory to avoid conflicts
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            project_name = folder.name.lower().replace("-", "_")
+
+            # Get the path to the django-admin executable inside the created venv
+            django_admin_path = _get_venv_executable(folder, "django-admin")
+
+            # Run the command in the temp dir, using the executable from the final dir
+            # This is non-interactive, so run_command_with_output is fine
+            if not run_command_with_output(f"{django_admin_path} startproject {project_name} .", cwd=temp_path):
+                return False
+
+            # Move scaffolded files to the final folder
+            for item in temp_path.iterdir():
+                dest_path = folder / item.name
+                if not dest_path.exists():
+                    shutil.move(str(item), str(dest_path))
+
         status_message("Django project created.")
 
-        if not _create_file_safely(folder / ".env", scaffold_django_template["env"]): return False
-        if not _create_file_safely(folder / "requirements.txt", scaffold_django_template["requirements"]): return False
+        if not _create_file_safely(folder / ".env", scaffold_django_template["env"]):
+            return False
+        if not _create_file_safely(folder / "requirements.txt", scaffold_django_template["requirements"]):
+            return False
 
         status_message("Django backend scaffolded successfully.")
         return True
     except Exception as e:
         status_message(f"Failed to scaffold Django backend: {e}", False)
         return False
+
 
 def scaffold_spring_boot(folder: Path) -> bool:
     arrow_message("Scaffolding Spring Boot (Java) backend...")
@@ -1440,9 +1671,12 @@ def scaffold_spring_boot(folder: Path) -> bool:
 
         # Create files
         if not _create_file_safely(folder / "pom.xml", scaffold_spring_boot_template["pom_xml"]): return False
-        if not _create_file_safely(java_dir / "DemoApplication.java", scaffold_spring_boot_template["main_app"]): return False
-        if not _create_file_safely(java_dir / "HelloController.java", scaffold_spring_boot_template["controller"]): return False
-        if not _create_file_safely(resources_dir / "application.properties", scaffold_spring_boot_template["properties"]): return False
+        if not _create_file_safely(java_dir / "DemoApplication.java",
+                                   scaffold_spring_boot_template["main_app"]): return False
+        if not _create_file_safely(java_dir / "HelloController.java",
+                                   scaffold_spring_boot_template["controller"]): return False
+        if not _create_file_safely(resources_dir / "application.properties",
+                                   scaffold_spring_boot_template["properties"]): return False
 
         status_message("Spring Boot project structure created.")
         arrow_message("Run './mvnw spring-boot:run' to start the server.")
@@ -1451,13 +1685,34 @@ def scaffold_spring_boot(folder: Path) -> bool:
         status_message(f"Failed to scaffold Spring Boot backend: {e}", False)
         return False
 
+
 def scaffold_ruby_on_rails(folder: Path) -> bool:
+    """Scaffold a Ruby on Rails project safely."""
     arrow_message("Scaffolding Ruby on Rails backend...")
     try:
-        if not run_command_with_output("rails new . --api --database=postgresql", cwd=folder): return False
+        # Scaffold in a temporary directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            # Use interactive runner
+            if not run_command_interactively("rails new . --api --database=postgresql", cwd=temp_path):
+                return False
+
+            # Move scaffolded files to the final folder
+            for item in temp_path.iterdir():
+                dest_path = folder / item.name
+                if not dest_path.exists():
+                    shutil.move(str(item), str(dest_path))
+
         status_message("Rails API project created.")
-        if not _create_file_safely(folder / "app" / "controllers" / "api" / "v1" / "greetings_controller.rb", scaffold_ruby_on_rails_template["controller"]): return False
-        if not _create_file_safely(folder / "config" / "routes.rb", scaffold_ruby_on_rails_template["routes"]): return False
+
+        # Create additional files in the final location
+        controller_dir = folder / "app" / "controllers" / "api" / "v1"
+        controller_dir.mkdir(parents=True, exist_ok=True)
+        if not _create_file_safely(controller_dir / "greetings_controller.rb",
+                                   scaffold_ruby_on_rails_template["controller"]):
+            return False
+        if not _create_file_safely(folder / "config" / "routes.rb", scaffold_ruby_on_rails_template["routes"]):
+            return False
 
         # Create the database
         if not run_command_with_output("bundle exec rails db:create", cwd=folder):
@@ -1468,6 +1723,7 @@ def scaffold_ruby_on_rails(folder: Path) -> bool:
     except Exception as e:
         status_message(f"Failed to scaffold Rails backend: {e}", False)
         return False
+
 
 def scaffold_go_gin(folder: Path) -> bool:
     arrow_message("Scaffolding Go (Gin) backend...")
@@ -1486,10 +1742,24 @@ def scaffold_go_gin(folder: Path) -> bool:
         status_message(f"Failed to scaffold Go (Gin) backend: {e}", False)
         return False
 
+
 def scaffold_aspnet_core(folder: Path) -> bool:
+    """Scaffold an ASP.NET Core project safely."""
     arrow_message("Scaffolding ASP.NET Core (C#) backend...")
     try:
-        if not run_command_with_output("dotnet new webapi -o . --no-https", cwd=folder): return False
+        # Scaffold in a temp directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            # This is non-interactive, so run_command_with_output is fine
+            if not run_command_with_output("dotnet new webapi -o . --no-https", cwd=temp_path):
+                return False
+
+            # Move files to the final folder
+            for item in temp_path.iterdir():
+                dest_path = folder / item.name
+                if not dest_path.exists():
+                    shutil.move(str(item), str(dest_path))
+
         status_message("ASP.NET Core Web API project created.")
         status_message("Run 'dotnet run' to start the server.")
         return True

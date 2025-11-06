@@ -18,7 +18,6 @@ from launchkit.utils.display_utils import (
     status_message,
     exiting_program,
 )
-
 from launchkit.utils.que import Question
 
 # Possible user choices for identity
@@ -3934,7 +3933,8 @@ def welcome_user():
 
         elif "Exit" in choice:
             exiting_program()
-            sys.exit(0)
+            # sys.exit(0)
+            return None
 
 def add_data_to_db(data: dict, selected_folder: str):
     """Update the project's data.json with new data and create a backup."""
@@ -3973,14 +3973,15 @@ def ensure_folder_exists(path: Path):
         path.mkdir(parents=True, exist_ok=True)
 
 
-def handle_user_data() -> Tuple[dict, Path]:
+def handle_user_data() -> tuple[None, None] | tuple[dict[str | Any, str | bool | None | list[Any] | Any] | Any, Path]:
     """Fetch user data from welcome_user() and validate it."""
     try:
         data = welcome_user()  # Now returns project data with project-specific folder
         if not data:
             status_message("Failed to load or create project data.", False)
             exiting_program()
-            sys.exit(1)
+            # sys.exit(1)
+            return None, None
 
         user_name = data["user_name"]
         project_name = data.get("project_name", "Unknown Project")

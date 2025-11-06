@@ -1,12 +1,12 @@
 import json
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 
 from launchkit.utils.display_utils import *
 from launchkit.utils.que import Question
-from launchkit.utils.user_utils import add_data_to_db
 from launchkit.utils.stack_utils import *
+from launchkit.utils.user_utils import add_data_to_db
 
 # ====================================================================================
 # CENTRALIZED ADDON DEPENDENCIES - SINGLE SOURCE OF TRUTH
@@ -264,28 +264,6 @@ def choose_addons() -> List[str]:
     return chosen
 
 
-def add_new_addons(data, folder):
-    """Add new add-ons to existing project with dependency installation."""
-    from launchkit.utils.enum_utils import ADDON_DISPATCH
-
-    current_addons = data.get("addons", [])
-    available_addons = [addon for addon in ADDON_DISPATCH.keys()
-                        if addon not in current_addons]
-
-    if not available_addons:
-        status_message("All available add-ons are already configured!", True)
-        return
-
-    available_addons.append("Cancel")
-    new_addon = Question("Select add-on to add:", available_addons).ask()
-
-    if new_addon != "Cancel" and new_addon in available_addons:
-        stack = data.get("project_stack", "")
-        apply_addons([new_addon], folder, stack)
-        data["addons"].append(new_addon)
-        add_data_to_db(data, str(folder))
-        status_message(f"{new_addon} added successfully!")
-
 
 def enable_lint_format(folder: Path, stack: str):
     """Adds linting/formatting by fetching dependencies centrally."""
@@ -407,7 +385,7 @@ def enable_ci(folder: Path, stack: str):
     include_deploy = Question("Include deployment step in CI?", ["Yes", "No"]).ask()
 
     # Node.js based workflow (React, MERN, PERN, Next.js, Express, OpenAI Demo)
-    if is_python_based_stack(stack):
+    if is_node_based_stack(stack):
         workflow = f"""name: Build & Test
 on: 
   push:
@@ -580,7 +558,7 @@ def enable_docker(folder: Path, stack: str):
     dockerfile_content = ""
     docker_compose_content = ""
 
-    if is_python_based_stack(stack):
+    if is_node_based_stack(stack):
         if is_next_js_stack(stack):
             dockerfile_content = """FROM node:18-alpine AS base
 
@@ -1280,7 +1258,7 @@ def create_docker_scripts(folder: Path, stack: str):
     scripts_dir.mkdir(exist_ok=True)
 
     # Determine application URL based on stack
-    app_url = "http://localhost:3000" if is_python_based_stack(stack) else "http://localhost:5000"
+    app_url = "http://localhost:5000" if is_python_based_stack(stack) else "http://localhost:3000"
 
     # Development script
     dev_script = f"""#!/bin/bash
@@ -1361,7 +1339,7 @@ def create_additional_docker_configs(folder: Path, stack: str):
     """Create additional configuration files for Docker setup."""
 
     # Create nginx.conf for Node.js apps with nginx service
-    if is_python_based_stack(stack):
+    if is_node_based_stack(stack):
         nginx_config = """events {
     worker_connections 1024;
 }
@@ -1505,16 +1483,16 @@ API_KEY=your-api-key-here
     (folder / ".env.example").write_text(env_example)
 
 
-
 def enable_kubernetes(folder: Path, stack: str):
     """Add comprehensive Kubernetes support with Kustomize, Helm, and helper scripts."""
     arrow_message("Adding Kubernetes support...")
 
     k8s_dir = folder / "k8s"
     app_name = folder.name.lower().replace("_", "-")
-    app_port = "3000" if is_python_based_stack(stack) else "5000"
+    # CORRECTED: Flask uses 5000, Node uses 3000
+    app_port = "5000" if is_python_based_stack(stack) else "3000"
 
-    # Create Kustomize structure
+    # --- Create Kustomize structure ---
     (k8s_dir / "base").mkdir(parents=True, exist_ok=True)
     (k8s_dir / "overlays" / "development").mkdir(parents=True, exist_ok=True)
     (k8s_dir / "overlays" / "production").mkdir(parents=True, exist_ok=True)
@@ -1623,7 +1601,78 @@ replicas:
     # --- Create Helper Scripts ---
     create_k8s_scripts(folder, app_name)
 
+    # --- ADDED: Integration of advanced resource generation ---
+    arrow_message("Creating advanced Kubernetes resources...")
+
+    # Ask user for cluster type to tailor resources
+    cluster_type = Question(
+        "Which type of cluster are you targeting?",
+        ["Local (minikube, kind, Docker Desktop)", "Cloud (EKS/GKE/AKS)"]
+    ).ask()
+
+    # Generate database, monitoring, and logging manifests
+    create_database_resources(k8s_dir, stack, app_name)
+    create_monitoring_resources(k8s_dir, app_name, app_port)
+    create_logging_resources(k8s_dir, app_name)
+
+    # Generate comprehensive Kustomization files that include the new resources
+    create_kustomization_files(k8s_dir, app_name, cluster_type)
+
     status_message("Kubernetes configuration added with Kustomize, Helm, and scripts!")
+
+ADDON_DISPATCH: Dict[str, Callable[[Path, str], None]] = {
+    "Add Docker Support": enable_docker,
+    "Add Kubernetes Support": enable_kubernetes,
+    "Add CI (GitHub Actions)": enable_ci,
+    "Add Linting & Formatter": enable_lint_format,
+    "Add Unit Testing Skeleton": enable_tests,
+}
+
+def add_new_addons(data, folder):
+    """Add new add-ons to existing project with dependency installation."""
+    # from launchkit.utils.enum_utils import ADDON_DISPATCH
+
+    current_addons = data.get("addons", [])
+    available_addons = [addon for addon in ADDON_DISPATCH.keys()
+                        if addon not in current_addons]
+
+    if not available_addons:
+        status_message("All available add-ons are already configured!", True)
+        return
+
+    available_addons.append("Cancel")
+    new_addon = Question("Select add-on to add:", available_addons).ask()
+
+    if new_addon != "Cancel" and new_addon in available_addons:
+        stack = data.get("project_stack", "")
+        apply_addons([new_addon], folder, stack)
+        data["addons"].append(new_addon)
+        add_data_to_db(data, str(folder))
+        status_message(f"{new_addon} added successfully!")
+
+def apply_addons(addons: List[str], folder: Path, stack: str):
+    """Apply selected add-ons with progress tracking."""
+    # from launchkit.utils.enum_utils import ADDON_DISPATCH
+
+    if not addons:
+        arrow_message("No add-ons to apply.")
+        return
+
+    progress_message(f"Applying {len(addons)} add-on(s)...")
+
+    for i, addon in enumerate(addons, 1):
+        rich_message(f"[{i}/{len(addons)}] Configuring: {addon}", False)
+        fn = ADDON_DISPATCH.get(addon)
+        if fn:
+            try:
+                fn(folder, stack)
+                status_message(f"{addon} configured successfully!")
+            except Exception as e:
+                status_message(f"Failed to configure {addon}: {e}", False)
+        else:
+            status_message(f"Unknown addon skipped: {addon}", False)
+
+    boxed_message("🎉 All add-ons configured!")
 
 
 
@@ -2665,26 +2714,3 @@ uninstall:
     status_message("Helm chart created successfully!")
 
 
-def apply_addons(addons: List[str], folder: Path, stack: str):
-    """Apply selected add-ons with progress tracking."""
-    from launchkit.utils.enum_utils import ADDON_DISPATCH
-
-    if not addons:
-        arrow_message("No add-ons to apply.")
-        return
-
-    progress_message(f"Applying {len(addons)} add-on(s)...")
-
-    for i, addon in enumerate(addons, 1):
-        rich_message(f"[{i}/{len(addons)}] Configuring: {addon}", False)
-        fn = ADDON_DISPATCH.get(addon)
-        if fn:
-            try:
-                fn(folder, stack)
-                status_message(f"{addon} configured successfully!")
-            except Exception as e:
-                status_message(f"Failed to configure {addon}: {e}", False)
-        else:
-            status_message(f"Unknown addon skipped: {addon}", False)
-
-    boxed_message("🎉 All add-ons configured!")

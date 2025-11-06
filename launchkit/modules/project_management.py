@@ -11,9 +11,6 @@ from launchkit.utils.enum_utils import STACK_CONFIG
 from launchkit.utils.que import Question
 from launchkit.utils.scaffold_utils import scaffold_project_with_cleanup, cleanup_failed_scaffold, \
     scaffold_project_complete_delete
-from launchkit.utils.support_utils import deploy_with_docker, deploy_to_kubernetes, setup_automated_deployment, \
-    show_manual_deployment_guide
-from launchkit.utils.user_utils import add_data_to_db, create_backup, rename_project
 from launchkit.utils.stack_utils import (
     is_node_based_stack,
     is_python_based_stack,
@@ -21,6 +18,10 @@ from launchkit.utils.stack_utils import (
     is_next_js_stack,
     is_fullstack_stack
 )
+from launchkit.utils.support_utils import deploy_with_docker, deploy_to_kubernetes, setup_automated_deployment, \
+    show_manual_deployment_guide
+from launchkit.utils.user_utils import add_data_to_db, create_backup, rename_project
+
 
 def choose_project_type() -> Any | None:
     # Dynamically get project types from the new STACK_CONFIG

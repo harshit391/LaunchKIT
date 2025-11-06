@@ -1,23 +1,74 @@
-from typing import Any
-import requests
 import atexit
-import json
 import os
-import time
-import sys
 import platform
 import signal
 import subprocess
+import sys
 import threading
+import time
 import webbrowser
+from collections import deque
 from pathlib import Path
+from queue import Queue
+from typing import Any
+
+import requests
 
 from launchkit.utils.display_utils import *
 from launchkit.utils.que import Question
+from launchkit.utils.stack_utils import is_fullstack_stack
 
 running_processes = {}
+stdout_lock = threading.Lock()  # Add lock for stdout
 
 from launchkit.utils.enum_utils import STACK_CONFIG
+
+
+def _monitor_server_startup_async(process_name):
+    """
+    (BACKGROUND THREAD) Polls a server process to see if it's ready.
+    This runs in a separate thread to avoid blocking the main thread.
+    """
+    if process_name not in running_processes:
+        return False
+
+    process_info = running_processes[process_name]
+    process = process_info['process']
+    server_url = process_info['url']
+    server_name = process_info['config'].get('name', 'default')
+
+    SERVER_POLL_ATTEMPTS = 30
+    SERVER_POLL_INTERVAL_S = 0.5
+
+    server_ready = False
+
+    for i in range(SERVER_POLL_ATTEMPTS):
+        if process.poll() is not None:
+            break  # Process died
+
+        if not server_url:
+            time.sleep(2)  # No URL, just wait 2s and assume it's up
+            server_ready = True
+            break
+
+        try:
+            response = requests.get(server_url, timeout=1)
+            if 200 <= response.status_code < 400:
+                server_ready = True
+                break
+        except requests.exceptions.ConnectionError:
+            time.sleep(SERVER_POLL_INTERVAL_S)
+        except requests.RequestException:
+            break  # Stop trying on a request exception
+
+    # Update the process info with startup status
+    if process_name in running_processes:
+        running_processes[process_name]['startup_complete'] = True
+        running_processes[process_name]['startup_success'] = server_ready and process.poll() is None
+
+        if not running_processes[process_name]['startup_success']:
+            # Mark as failed but keep in dict temporarily for error display
+            running_processes[process_name]['startup_failed'] = True
 
 
 def run_dev_server(data, folder):
@@ -26,7 +77,7 @@ def run_dev_server(data, folder):
     project_name = data.get("project_name", "Unknown Project")
 
     # Check if a server is already running
-    if 'dev_server' in running_processes and running_processes['dev_server']['process'].poll() is None:
+    if 'dev_server_default' in running_processes and running_processes['dev_server_default']['process'].poll() is None:
         status_message("Development server is already running!", True)
         server_management_menu(data, folder)
         return
@@ -34,7 +85,36 @@ def run_dev_server(data, folder):
     progress_message(f"Starting development server for {project_name}...")
 
     # Detect server configuration
-    server_config = detect_server_config(Path(folder), stack)
+    server_configs = detect_server_config(Path(folder), stack)
+
+    # Check if we got a list (fullstack) or a single config
+    if isinstance(server_configs, list):
+        arrow_message(f"Detected fullstack project. Starting {len(server_configs)} services...")
+
+        # Ask how to run *once*
+        run_options = [
+            "Run in Background (recommended)",
+            "Open in New Terminal (multiple terminals)",
+            "Cancel"
+        ]
+        choice = Question("How would you like to run the development servers?", run_options).ask()
+
+        if "Cancel" in choice:
+            return
+
+        for config in server_configs:
+            arrow_message(f"Starting {config['name']} ({' '.join(config['command'])})")
+            if "Background" in choice:
+                run_server_background(config, data)
+            elif "New Terminal" in choice:
+                run_server_new_terminal(config, data)
+
+        # After starting all, go to management menu
+        server_management_menu(data, folder)
+        return
+
+    # If not a list, proceed with the original single-server logic
+    server_config = server_configs
 
     if not server_config['command']:
         status_message(f"Development server command not configured for {stack}", False)
@@ -65,128 +145,171 @@ def run_dev_server(data, folder):
 
     choice = Question("How would you like to run the development server?", run_options).ask()
 
+    # Convert single config to a list for unified logic
+    if not isinstance(server_configs, list):
+        server_configs = [server_configs]
+
     if "Background" in choice:
-        run_server_background(server_config, data)
+        started_process_names = []
+        all_successful = True
+
+        # --- 1. Start all processes (This is fast and non-blocking) ---
+        for config in server_configs:
+            if not config['command']:
+                status_message(f"Development server command not configured for {stack}", False)
+                all_successful = False
+                break
+
+            arrow_message(f"Starting {config['name']} ({' '.join(config['command'])})")
+            process_name = run_server_background(config, data)
+
+            if process_name:
+                started_process_names.append(process_name)
+                # Show immediate status
+                process_info = running_processes[process_name]
+                status_message(f"Server '{config['name']}' process started!", True)
+                arrow_message(f"Process ID: {process_info['process'].pid}")
+                if process_info['url']:
+                    boxed_message(f"🌐 {config['name']} URL: {process_info['url']}")
+                arrow_message(f"Checking if server is ready (this happens in background)...")
+            else:
+                all_successful = False
+                break  # Failed to even start the Popen
+
+        if not all_successful:
+            status_message("Failed to start one or more servers. Stopping all...", False)
+            stop_development_server()
+            return
+
+        # --- 2. Start monitoring threads (non-blocking) ---
+        monitor_threads = []
+        for process_name in started_process_names:
+            monitor_thread = threading.Thread(
+                target=_monitor_server_startup_async,
+                args=(process_name,),
+                daemon=True
+            )
+            monitor_thread.start()
+            monitor_threads.append(monitor_thread)
+
+        # Show a message that monitoring is happening in background
+        boxed_message("Server(s) started! Monitoring startup in background...")
+        arrow_message("You can continue using LaunchKIT while servers are starting up.")
+        arrow_message("Use 'Check Server Status' to see if servers are ready.")
+
+        # --- 3. Ask for browser (don't wait for startup) ---
+        urls_to_open = [running_processes[name]['url'] for name in started_process_names if
+                        running_processes[name]['url']]
+        # Print all URLs clearly
+        if urls_to_open:
+            print()
+            boxed_message("📍 Server URLs")
+            for name in started_process_names:
+                if running_processes[name]['url']:
+                    arrow_message(f"{running_processes[name]['config']['name']}: {running_processes[name]['url']}")
+            print()
+
+        # --- 3. Ask for browser (don't wait for startup) ---
+
+        # --- 4. Now show the management menu (non-blocking) ---
+        server_management_menu(data, folder)
+
     elif "Foreground" in choice:
-        run_server_foreground(server_config)
+        if len(server_configs) > 1:
+            status_message("Cannot run multiple servers in foreground.", False)
+        elif not server_configs[0]['command']:
+            status_message(f"Development server command not configured for {stack}", False)
+        else:
+            run_server_foreground(server_configs[0])
+
     elif "New Terminal" in choice:
-        run_server_new_terminal(server_config, data)
+        for config in server_configs:
+            if config['command']:
+                run_server_new_terminal(config, data)
+            else:
+                status_message(f"Cannot open new terminal for {config['name']}: no command configured.", False)
     else:
-        return
+        return  # Cancelled
 
 
 def run_server_background(server_config, data):
-    """Run development server in background process."""
+    """
+    Starts the server in a background process and a log-capturing thread.
+    Returns the process_name key immediately. Does NOT monitor for startup.
+    """
     try:
         command = server_config['command']
         folder = server_config['working_dir']
         server_url = server_config['url']
         env_vars = server_config.get('env_vars', {})
+        process_name = f"dev_server_{server_config.get('name', 'default')}"
 
-        # Prepare environment variables
+        if process_name in running_processes and running_processes[process_name]['process'].poll() is None:
+            # It's already running, which is fine
+            return process_name
+
+        print(f"Location:- ({server_config['url']})")
+        print()
+
+        import platform
+        is_windows = platform.system() == "Windows"
+        cmd_to_run = ' '.join(command) if is_windows else command
+
         env = os.environ.copy()
         env.update(env_vars)
 
-        # Start the process in background
         process = subprocess.Popen(
-            command,
-            cwd=folder,
+            cmd_to_run,
+            cwd=str(folder),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,  # Explicitly set stdin to DEVNULL
             universal_newlines=True,
             bufsize=1,
-            env=env
+            env=env,
+            shell=is_windows
         )
 
-        # Store the process for later management
-        running_processes['dev_server'] = {
+        running_processes[process_name] = {
             'process': process,
             'command': command,
             'folder': folder,
             'url': server_url,
             'project_name': data.get("project_name", "Unknown"),
-            'config': server_config
+            'config': server_config,
+            'logs': deque(maxlen=200),
+            'startup_complete': False,
+            'startup_success': False,
+            'startup_failed': False
         }
 
-        # Start a thread to monitor the process output
-        def monitor_process():
+        # Start a thread to *only* capture logs. No prints, no status.
+        def capture_logs():
             try:
-                # === MODIFIED SECTION START ===
-                server_ready = False
-                # Try to connect for up to 15 seconds (30 attempts * 0.5s interval)
-                for i in range(30):
-                    # Check if the process has terminated unexpectedly
-                    if process.poll() is not None:
-                        break
+                if process.stdout:
+                    for line in iter(process.stdout.readline, ''):
+                        if process_name in running_processes:
+                            running_processes[process_name]['logs'].append(line.strip())
+                        else:
+                            break  # Process was removed
+            except:
+                pass  # Process terminated
 
-                    if not server_url:  # Handle cases where there's no server to poll
-                        time.sleep(2)  # Assume it's ready after a short delay
-                        server_ready = True
-                        break
+        log_thread = threading.Thread(target=capture_logs, daemon=True)
+        log_thread.start()
 
-                    try:
-                        # Attempt to make a request to the server URL
-                        response = requests.get(server_url, timeout=1)
-                        # A successful response is typically in the 2xx or 3xx range
-                        if 200 <= response.status_code < 400:
-                            server_ready = True
-                            break  # Server is up and running
-                    except requests.exceptions.ConnectionError:
-                        # Server is not yet accepting connections, wait and retry
-                        time.sleep(0.5)
-                    except requests.RequestException as ex:
-                        # Handle other potential request errors
-                        status_message(f"Server check failed with an error: {ex}", False)
-                        break
-
-                if server_ready and process.poll() is None:  # Process is running and responding
-                    status_message("Development server started successfully!", True)
-                    arrow_message(f"Process ID: {process.pid}")
-                    if server_url:
-                        arrow_message(f"Server URL: {server_url}")
-                    arrow_message("Use 'Manage Running Services' to control the server.")
-
-                    # Ask if user wants to open browser
-                    if server_url:
-                        open_browser_choice = Question("Would you like to open the application in your browser?",
-                                                       ["Yes", "No"]).ask()
-                        if open_browser_choice == "Yes":
-                            open_browser_url(server_url)
-                else:
-                    # Process failed to start or did not respond in time
-                    try:
-                        # Read the process output to show the error
-                        error_output = process.stdout.read() if process.stdout else "No output available."
-                        error_message = f"Failed to start development server. It did not respond in time."
-                        if error_output.strip():
-                            error_message += f"\nServer Output:\n---\n{error_output.strip()}\n---"
-                        status_message(error_message, False)
-                    except Exception as ex:
-                        status_message(f"Failed to start development server and could not read error output: {ex}",
-                                       False)
-
-                    # Clean up failed process
-                    if 'dev_server' in running_processes:
-                        del running_processes['dev_server']
-                # === MODIFIED SECTION END ===
-            except Exception as ex:
-                status_message(f"An error occurred while monitoring the server process: {ex}", False)
-
-        # Start monitoring thread
-        monitor_thread = threading.Thread(target=monitor_process, daemon=True)
-        monitor_thread.start()
-
-        # Show server management menu immediately without waiting
-        server_management_menu(data, folder)
+        return process_name  # Return the key
 
     except Exception as e:
-        status_message(f"Failed to start development server: {e}", False)
+        # This print *is* safe, as it's in the main thread
+        status_message(f"Failed to start development server process: {e}", False)
+        return None
 
 
 def run_server_foreground(server_config):
     """Run development server in foreground (blocking)."""
     command = server_config['command']
-    folder = server_config['working_dir']
+    folder = str(server_config['working_dir'])
     env_vars = server_config.get('env_vars', {})
 
     boxed_message("⚠️  Server will run in foreground")
@@ -199,7 +322,11 @@ def run_server_foreground(server_config):
         env = os.environ.copy()
         env.update(env_vars)
 
-        result = subprocess.run(command, cwd=folder, env=env)
+        import platform
+        is_windows = platform.system() == "Windows"
+        cmd_to_run = ' '.join(command) if is_windows else command
+
+        result = subprocess.run(cmd_to_run, cwd=folder, env=env, shell=is_windows)
         if result.returncode == 0:
             status_message("Development server stopped normally", True)
         else:
@@ -230,18 +357,15 @@ def run_server_new_terminal(server_config, data):
 
     try:
         if system == "Windows":
-            # Windows Command Prompt
             full_cmd = f'start "LaunchKIT Dev Server" cmd /k "cd /d "{folder}" && {cmd_str}"'
             subprocess.Popen(full_cmd, shell=True)
         elif system == "Darwin":
-            # macOS Terminal
             script = f'cd "{folder}" && {cmd_str}'
             subprocess.Popen([
                 'osascript', '-e',
                 f'tell app "Terminal" to do script "echo \'LaunchKIT Development Server\' && {script}"'
             ])
         else:
-            # Linux - try different terminal emulators
             terminals = [
                 ('gnome-terminal', ['gnome-terminal', '--title=LaunchKIT Dev Server', '--', 'bash', '-c',
                                     f'echo "LaunchKIT Development Server" && cd "{folder}" && {cmd_str}; exec bash']),
@@ -278,18 +402,34 @@ def run_server_new_terminal(server_config, data):
 def server_management_menu(data, folder):
     """Menu to manage running development server."""
     while True:
-        # Check if server is still running
-        server_status = "Not Running"
-        if 'dev_server' in running_processes:
-            process_info = running_processes['dev_server']
-            if process_info['process'].poll() is None:
-                server_status = f"Running (PID: {process_info['process'].pid})"
-            else:
-                # Clean up dead process
-                del running_processes['dev_server']
-                server_status = "Stopped"
+        # Flush stdout to ensure clean display
+        sys.stdout.flush()
 
+        # Check status of all dev servers
+        running_servers = []
+        # Iterate over a copy as we might delete items
+        for name, info in list(running_processes.items()):
+            if name.startswith('dev_server_'):
+                if info['process'].poll() is None:
+                    server_name = name.replace('dev_server_', '')
+                    status_indicator = "✓" if info.get('startup_success') else "⏳" if not info.get(
+                        'startup_complete') else "✗"
+                    running_servers.append(f"{server_name} {status_indicator} (PID: {info['process'].pid})")
+                else:
+                    # Clean up stopped server
+                    del running_processes[name]
+
+        if running_servers:
+            server_status = "Running: " + ", ".join(running_servers)
+        else:
+            server_status = "Not Running"
+
+        print()  # Add spacing before menu
         boxed_message(f"Development Server Management - {server_status}")
+        print()  # Add spacing after title
+
+        # Flush again before showing menu
+        sys.stdout.flush()
 
         server_options = [
             "Check Server Status",
@@ -301,7 +441,33 @@ def server_management_menu(data, folder):
             "Back to Main Menu"
         ]
 
-        choice = Question("Server Management Options:", server_options).ask()
+        try:
+            # Debug: Check if stdin is available
+            if not sys.stdin.isatty():
+                print("WARNING: stdin is not a TTY!")
+
+            # Make sure stdin/stdout are properly set
+            sys.stdout.flush()
+            sys.stderr.flush()
+
+            choice = Question("Server Management Options:", server_options).ask()
+        except KeyboardInterrupt:
+            print("\n")
+            status_message("Returning to main menu...", True)
+            break
+        except EOFError:
+            print("\n")
+            status_message("Input error, returning to main menu...", False)
+            break
+        except Exception as e:
+            print(f"\nError getting menu choice: {e}")
+            print(f"Exception type: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
+            status_message("Returning to main menu...", False)
+            break
+
+        print()  # Add spacing after selection
 
         if "Status" in choice:
             check_server_status()
@@ -318,67 +484,116 @@ def server_management_menu(data, folder):
         elif "Back" in choice:
             break
 
+        # Small pause before showing menu again
+        time.sleep(0.5)
+
 
 def check_server_status():
     """Check if development server is running."""
-    if 'dev_server' in running_processes:
-        process_info = running_processes['dev_server']
+    found_servers = False
+    # Iterate over a copy as we might delete items
+    for name, process_info in list(running_processes.items()):
+        if not name.startswith('dev_server_'):
+            continue
+
         process = process_info['process']
+        server_name = name.replace('dev_server_', '')
 
         if process.poll() is None:
-            status_message("Development server is running", True)
-            arrow_message(f"Project: {process_info.get('project_name', 'Unknown')}")
-            arrow_message(f"Process ID: {process.pid}")
-            arrow_message(f"Server URL: {process_info.get('url', 'N/A')}")
-            arrow_message(f"Working Directory: {process_info.get('folder', 'Unknown')}")
-            rich_message(f"Command: {' '.join(process_info.get('command', []))}", False)
+            found_servers = True
 
-            # Show uptime
+            # Check startup status
+            if process_info.get('startup_complete'):
+                if process_info.get('startup_success'):
+                    status_message(f"Server '{server_name}' is running and ready ✓", True)
+                else:
+                    status_message(f"Server '{server_name}' is running but startup check failed", False)
+                    arrow_message("  The server process is alive but may not be responding correctly")
+            else:
+                status_message(f"Server '{server_name}' is starting up... ⏳", True)
+                arrow_message("  Waiting for server to respond to health checks")
+
+            arrow_message(f"  Project: {process_info.get('project_name', 'Unknown')}")
+            arrow_message(f"  Process ID: {process.pid}")
+            arrow_message(f"  Server URL: {process_info.get('url', 'N/A')}")
+            arrow_message(f"  Working Directory: {process_info.get('folder', 'Unknown')}")
+            rich_message(f"  Command: {' '.join(process_info.get('command', []))}", False)
+
             try:
                 import psutil
                 proc = psutil.Process(process.pid)
                 uptime = time.time() - proc.create_time()
-                arrow_message(f"Uptime: {format_duration(uptime)}")
+                arrow_message(f"  Uptime: {format_duration(uptime)}")
             except ImportError:
-                pass  # psutil not available
-            except Exception as ex:
-                print(f"Failed to check server status: {ex}", file=sys.stderr)
-                pass  # Process might not exist anymore
+                pass
+            except Exception:
+                pass
 
         else:
-            status_message("Development server process has stopped. The status will update in the menu.", False)
-    else:
-        status_message("No development server process found", False)
+            status_message(f"Server '{server_name}' process has stopped.", False)
+            del running_processes[name]
+
+    if not found_servers:
+        status_message("No development server processes found", False)
+
+
+def _get_running_server_process(action: str):
+    """Helper to select a server process when multiple are running."""
+    running_servers = {}
+    for name, info in running_processes.items():
+        if name.startswith('dev_server_') and info['process'].poll() is None:
+            server_name = name.replace('dev_server_', '')
+            running_servers[server_name] = info
+
+    if not running_servers:
+        status_message("No development servers running", False)
+        return None
+
+    if len(running_servers) == 1:
+        return list(running_servers.values())[0]
+
+    # Ask user which one
+    server_choice = Question(f"Which server do you want to {action}?", list(running_servers.keys())).ask()
+    return running_servers.get(server_choice)
 
 
 def show_server_logs():
     """Show recent server output/logs."""
-    if 'dev_server' not in running_processes:
-        status_message("No development server running", False)
+    process_info = _get_running_server_process("show logs for")
+    if not process_info:
         return
 
-    process_info = running_processes['dev_server']
-    process = process_info['process']
+    logs = process_info.get('logs')
 
-    if process.poll() is not None:
+    if process_info['process'].poll() is not None:
+        status_message("Development server is not running, showing last captured logs.", False)
+
+    if not logs:
+        status_message("No logs have been captured for this server yet.", False)
+        return
+
+    boxed_message("Recent Server Logs (Last 200 Lines)")
+    for line in logs:
+        print(line)
+    rich_message("--- End of Logs ---", False)
+
+
+def open_browser_from_menu():
+    """Open browser with the development server URL."""
+    process_info = _get_running_server_process("open in browser")
+    if not process_info:
+        return
+
+    if process_info['process'].poll() is not None:
         status_message("Development server is not running", False)
         return
 
-    boxed_message("Recent Server Output")
+    url = process_info.get('url')
+    if not url:
+        status_message("Server URL is not configured for this project.", False)
+        return
 
-    try:
-        # Try to read some output from the process
-        if process.stdout and process.stdout.readable():
-            # This is a simplified approach - in a real implementation,
-            # you might want to continuously capture output in a separate thread
-            status_message("Live output capture is not implemented yet.", False)
-            arrow_message("Check your terminal where you started the server for logs.")
-        else:
-            status_message("No output stream available.", False)
-            arrow_message("The server might be logging to files or stdout is redirected.")
-
-    except Exception as e:
-        status_message(f"Error reading logs: {e}", False)
+    open_browser_url(url)
 
 
 def format_duration(seconds):
@@ -393,25 +608,6 @@ def format_duration(seconds):
         return f"{hours}h {minutes}m"
 
 
-def open_browser_from_menu():
-    """Open browser with the development server URL."""
-    if 'dev_server' not in running_processes:
-        status_message("No development server running", False)
-        return
-
-    process_info = running_processes['dev_server']
-    if process_info['process'].poll() is not None:
-        status_message("Development server is not running", False)
-        return
-
-    url = process_info.get('url')
-    if not url:
-        status_message("Server URL is not configured for this project.", False)
-        return
-
-    open_browser_url(url)
-
-
 def open_browser_url(url):
     """Open the specified URL in the default browser."""
     try:
@@ -424,52 +620,53 @@ def open_browser_url(url):
 
 def stop_development_server():
     """Stop the running development server."""
-    if 'dev_server' not in running_processes:
-        status_message("No development server to stop", False)
-        return
+    found_servers = False
+    # We must iterate over a copy of the keys since we are modifying the dict
+    for name in list(running_processes.keys()):
+        if not name.startswith('dev_server_'):
+            continue
 
-    process_info = running_processes['dev_server']
-    process = process_info['process']
+        found_servers = True
+        process_info = running_processes[name]
+        process = process_info['process']
+        server_name = name.replace('dev_server_', '')
 
-    if process.poll() is not None:
-        status_message("Development server is already stopped", True)
-        del running_processes['dev_server']
-        return
+        if process.poll() is not None:
+            status_message(f"Server '{server_name}' is already stopped", True)
+            if name in running_processes:
+                del running_processes[name]
+            continue
 
-    try:
-        progress_message("Stopping development server...")
-
-        # Gracefully terminate the process
-        process.terminate()
-
-        # Wait up to 5 seconds for graceful shutdown
         try:
-            process.wait(timeout=5)
-            status_message("Development server stopped gracefully", True)
-        except subprocess.TimeoutExpired:
-            # Force kill if it doesn't respond
-            status_message("Server didn't respond to graceful shutdown, force stopping...", False)
-            process.kill()
-            process.wait()
-            status_message("Development server force stopped", True)
+            progress_message(f"Stopping server '{server_name}'...")
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+                status_message(f"Server '{server_name}' stopped gracefully", True)
+            except subprocess.TimeoutExpired:
+                status_message(f"Server '{server_name}' didn't respond, force stopping...", False)
+                process.kill()
+                process.wait()
+                status_message(f"Server '{server_name}' force stopped", True)
 
-        # Clean up
-        del running_processes['dev_server']
+            if name in running_processes:
+                del running_processes[name]
 
-    except Exception as e:
-        status_message(f"Error stopping server: {e}", False)
+        except Exception as e:
+            status_message(f"Error stopping server '{server_name}': {e}", False)
+
+    if not found_servers:
+        status_message("No development servers to stop", False)
 
 
 def restart_development_server(data, folder):
     """Restart the development server."""
     progress_message("Restarting development server...")
 
-    # Stop current server if running
-    if 'dev_server' in running_processes:
-        stop_development_server()
-        time.sleep(2)  # Wait for complete shutdown
+    # Stop all dev servers
+    stop_development_server()
+    time.sleep(2)
 
-    # Start new server
     run_dev_server(data, folder)
 
 
@@ -489,17 +686,20 @@ def show_project_info(data, folder):
 
     arrow_message(f"Created: {data.get('created_date', 'Unknown')}")
 
-    # Check if server is running
-    if 'dev_server' in running_processes and running_processes['dev_server']['process'].poll() is None:
-        status_message("Development server is currently running")
-        server_info = running_processes['dev_server']
-        arrow_message(f"Server URL: {server_info.get('url', 'N/A')}")
-        arrow_message(f"Process ID: {server_info['process'].pid}")
-    else:
-        status_message("Development server is not running", False)
+    # Check all dev servers
+    running_count = 0
+    for name, process_info in running_processes.items():
+        if name.startswith('dev_server_') and process_info['process'].poll() is None:
+            running_count += 1
+            server_name = name.replace('dev_server_', '')
+            arrow_message(f"Server '{server_name}': Running (PID: {process_info['process'].pid})")
+            if process_info.get('url'):
+                arrow_message(f"  URL: {process_info['url']}")
+
+    if running_count == 0:
+        status_message("No development servers are running", False)
 
 
-# Enhanced cleanup function to handle processes on exit
 def cleanup_processes():
     """Clean up any running processes before exit."""
     if running_processes:
@@ -520,11 +720,9 @@ def cleanup_processes():
         running_processes.clear()
 
 
-# Register cleanup function
 atexit.register(cleanup_processes)
 
 
-# Handle Ctrl+C gracefully
 def signal_handler(_sig, _frame):
     progress_message("\nReceived interrupt signal. Cleaning up...")
     cleanup_processes()
@@ -537,23 +735,39 @@ if hasattr(signal, 'SIGTERM'):
     signal.signal(signal.SIGTERM, signal_handler)
 
 
-def detect_server_config(folder: Path, stack: str) -> dict:
+def detect_server_config(folder: Path, stack: str) -> dict | list:
     """Detect server configuration based on the centralized STACK_CONFIG."""
     config: Any = {
         'command': None,
         'url': None,
         'working_dir': folder,
-        'env_vars': {}
+        'env_vars': {},
+        'name': 'default'
     }
 
-    # Get stack information from our single source of truth
+    # Handle fullstack projects first
+    if is_fullstack_stack(stack):
+        if "Flask + React" in stack:
+            frontend_config = detect_server_config(folder / "frontend", "React (Vite)")
+            backend_config = detect_server_config(folder / "backend", "Flask (Python)")
+            frontend_config['name'] = 'frontend'
+            backend_config['name'] = 'backend'
+            return [frontend_config, backend_config]
+
+        if "MERN" in stack or "PERN" in stack:
+            # Assuming client is Vite-based React, which is common
+            frontend_config = detect_server_config(folder / "frontend", "React (Vite)")
+            backend_config = detect_server_config(folder / "backend", "Node.js (Express)")
+            frontend_config['name'] = 'frontend'
+            backend_config['name'] = 'backend'
+            return [frontend_config, backend_config]
+
     stack_info = STACK_CONFIG.get(stack)
 
     if not stack_info:
         status_message(f"Could not find configuration for stack: {stack}", False)
         return config
 
-    # Populate config directly from the stack's metadata
     if stack_info.get("dev_command"):
         config['command'] = stack_info["dev_command"].split()
 
@@ -563,32 +777,14 @@ def detect_server_config(folder: Path, stack: str) -> dict:
     if stack_info.get("env_vars"):
         config['env_vars'] = stack_info["env_vars"]
 
-    # Special handling for Python projects to use the virtual environment
     if stack_info.get("language") == "python" and (folder / "venv").exists():
         python_exe = "python.exe" if platform.system() == "Windows" else "python"
         python_path_str = str(folder / "venv" / ("Scripts" if platform.system() == "Windows" else "bin") / python_exe)
 
         cmd = config['command']
-        if cmd[0] == 'python':
-            # Replace 'python' with the full path to the venv python
+        if cmd and cmd[0] == 'python':
             config['command'] = [python_path_str] + cmd[1:]
-        elif cmd[0] == 'flask':
-            # Convert 'flask run' to '/path/to/venv/python -m flask run'
+        elif cmd and cmd[0] == 'flask':
             config['command'] = [python_path_str, '-m'] + cmd
-
-    # For full-stack projects, the dev command is usually run from the root
-    if stack_info.get("project_type") == "Fullstack":
-        if (folder / "frontend").exists() and (folder / "backend").exists():
-            # The 'npm run dev' command is correctly set from STACK_CONFIG
-            pass
-        else:  # We are likely in a subdirectory, fall back to language detection
-            if (folder / "package.json").exists():  # Likely frontend
-                config['command'] = ["npm", "run", "dev"]
-                config['url'] = f'http://localhost:{stack_info["dev_port"]}'
-            elif (folder / "app.py").exists() or (folder / "manage.py").exists():  # Likely backend
-                # Re-run detection for the specific backend part
-                if "Flask" in stack:
-                    return detect_server_config(folder, "Flask (Python)")
-                # Add other fullstack backend types if necessary
 
     return config

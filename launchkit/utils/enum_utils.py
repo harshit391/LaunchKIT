@@ -1,6 +1,5 @@
-from typing import Callable
+from typing import Callable, List, Dict
 
-from launchkit.modules.addon_management import *
 from launchkit.utils.scaffold_utils import *
 
 # PROJECT_TYPES: List[str] = [
@@ -94,13 +93,13 @@ ADDONS: List[str] = [
 # }
 
 # Updated ADDON_DISPATCH with new functions
-ADDON_DISPATCH: Dict[str, Callable[[Path, str], None]] = {
-    "Add Docker Support": enable_docker,
-    "Add Kubernetes Support": enable_kubernetes,
-    "Add CI (GitHub Actions)": enable_ci,
-    "Add Linting & Formatter": enable_lint_format,
-    "Add Unit Testing Skeleton": enable_tests,
-}
+# ADDON_DISPATCH: Dict[str, Callable[[Path, str], None]] = {
+#     "Add Docker Support": addon_management.enable_docker,
+#     "Add Kubernetes Support": addon_management.enable_kubernetes,
+#     "Add CI (GitHub Actions)": addon_management.enable_ci,
+#     "Add Linting & Formatter": addon_management.enable_lint_format,
+#     "Add Unit Testing Skeleton": addon_management.enable_tests,
+# }
 
 
 STACK_CONFIG = {

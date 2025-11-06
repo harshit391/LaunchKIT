@@ -5,8 +5,8 @@ from typing import Dict, Any, List
 
 from launchkit.utils.display_utils import *
 from launchkit.utils.que import Question
-from launchkit.utils.user_utils import add_data_to_db, run_command_with_output
 from launchkit.utils.stack_utils import *
+from launchkit.utils.user_utils import add_data_to_db, run_command_with_output
 
 
 def create_flask_production_config(folder: Path):
@@ -664,12 +664,13 @@ def _deploy_with_kustomize(k8s_dir: Path, environment: str, namespace: str) -> b
 
         if environment == "base":
             deploy_path = k8s_dir / "base"
-            success, output, error = run_command_with_output(f"kubectl apply -f {deploy_path}/ -n {namespace}")
         else:
             deploy_path = k8s_dir / "overlays" / environment
-            success, output, error = run_command_with_output(
-                f"kustomize build {deploy_path} | kubectl apply -f - -n {namespace}"
-            )
+
+            # Always build with kustomize, whether it's the base or an overlay
+        success, output, error = run_command_with_output(
+            f"kustomize build {deploy_path} | kubectl apply -f - -n {namespace}"
+        )
 
         if success:
             status_message(f"Kustomize deployment to {environment} successful!")
@@ -836,8 +837,18 @@ def _add_staging_deployment(folder: Path):
 
         # Read existing CI file and append staging config
         if ci_file.exists():
+            with open(ci_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # Check if the job already exists
+            if "deploy-staging:" in content:
+                status_message("Staging deployment job already exists in ci.yml.", False)
+                return
+
+            # If not, append the new config
             with open(ci_file, 'a', encoding='utf-8') as f:
                 f.write(staging_config)
+
             status_message("Staging deployment added to CI pipeline!")
             arrow_message("Added staging deployment job")
             arrow_message("Configure STAGING_SERVER and STAGING_SSH_KEY secrets in GitHub")
