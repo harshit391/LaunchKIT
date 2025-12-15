@@ -6,7 +6,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple, Dict, Any, List
+from typing import Tuple, Dict, Any, List, Union
 
 import names
 import yaml
@@ -19,6 +19,8 @@ from launchkit.utils.display_utils import (
     exiting_program,
 )
 from launchkit.utils.que import Question
+from launchkit.utils.security_utils import SecurityValidator, CommandBuilder
+from launchkit.utils.learning_mode import LearningMode
 
 # Possible user choices for identity
 user_identity = ["Yes, Sure", "Keep it Anonymous"]
@@ -165,29 +167,95 @@ def list_existing_projects():
 
 
 def run_command_with_output(
-    command: str, capture_output: bool = True, timeout: int = 30, cwd: Path = None
+    command: Union[str, List[str]], capture_output: bool = True, timeout: int = 30, cwd: Path = None
 ) -> tuple:
-    """Enhanced command execution with better output handling."""
+    """
+    Enhanced command execution with better output handling and security.
 
+    SECURITY NOTE: This function now accepts both strings (for backward compatibility)
+    and command arrays. Command arrays are preferred as they prevent injection attacks.
+    When using strings, they are NOT executed through shell for security.
+
+    Args:
+        command: Command to execute (string or list of arguments)
+        capture_output: Whether to capture stdout/stderr
+        timeout: Command timeout in seconds
+        cwd: Working directory for command execution
+
+    Returns:
+        tuple: (success: bool, stdout: str, stderr: str)
+    """
     try:
+        # Convert string commands to array format (backward compatibility)
+        if isinstance(command, str):
+            # For backward compatibility, split simple commands
+            # Note: This won't work for complex shell commands - those should be refactored
+            command_array = command.split()
+        else:
+            command_array = command
+
         result = subprocess.run(
-            command,
-            shell=True,
+            command_array,
+            shell=False,  # SECURITY: Never use shell=True
             capture_output=capture_output,
             text=True,
             timeout=timeout,
-            cwd=cwd,  # Add this line
+            cwd=cwd,
         )
         return result.returncode == 0, result.stdout, result.stderr
     except subprocess.TimeoutExpired:
         return False, "", f"Command timed out after {timeout} seconds"
+    except FileNotFoundError as e:
+        return False, "", f"Command not found: {e}"
     except Exception as e:
         return False, "", str(e)
 
 
+def run_command_safe(
+    command: List[str],
+    capture_output: bool = True,
+    timeout: int = 30,
+    cwd: Path = None,
+    purpose: str = "",
+    enable_learning: bool = True
+) -> tuple:
+    """
+    Secure command execution that only accepts command arrays.
+
+    This is the preferred method for executing commands as it prevents injection attacks.
+    Supports learning mode to educate users about commands.
+
+    Args:
+        command: List of command arguments (e.g., ["git", "init"])
+        capture_output: Whether to capture stdout/stderr
+        timeout: Command timeout in seconds
+        cwd: Working directory for command execution
+        purpose: High-level purpose of command (for learning mode)
+        enable_learning: Whether to show learning mode explanation
+
+    Returns:
+        tuple: (success: bool, stdout: str, stderr: str)
+
+    Raises:
+        TypeError: If command is not a list
+    """
+    if not isinstance(command, list):
+        raise TypeError("Command must be a list of arguments for security")
+
+    # Show learning mode explanation if enabled
+    if enable_learning and LearningMode.is_enabled():
+        LearningMode.interactive_command_execution(command, purpose)
+
+    return run_command_with_output(command, capture_output, timeout, cwd)
+
+
 # Keep the old function for backward compatibility
 def run_command(command: str, capture_output: bool = True, cwd: Path = None) -> tuple:
-    """Run a shell command and return success status and output."""
+    """
+    Run a command and return success status and output.
+
+    DEPRECATED: Use run_command_safe() with command arrays instead.
+    """
     return run_command_with_output(command, capture_output, 30, cwd)
 
 
@@ -3756,15 +3824,31 @@ def create_new_project():
     """Create a new project with user input."""
     base_folder = get_base_launchkit_folder()
 
-    # Get project name
+    # Get project name with validation
     while True:
         project_name = input("Enter your new project name: ").strip()
         if not project_name:
             status_message("Project name cannot be empty.", False)
             continue
 
+        # SECURITY: Validate project name to prevent path traversal and injection
+        try:
+            project_name = SecurityValidator.validate_project_name(project_name)
+        except ValueError as e:
+            status_message(f"Invalid project name: {e}", False)
+            status_message("Project name must contain only alphanumeric characters, hyphens, and underscores (1-50 characters).", False)
+            continue
+
         # Check if project already exists
         project_folder = base_folder / project_name
+
+        # SECURITY: Validate the resulting path
+        try:
+            project_folder = SecurityValidator.validate_path(project_folder, base_folder)
+        except ValueError as e:
+            status_message(f"Invalid project path: {e}", False)
+            continue
+
         if project_folder.exists():
             overwrite = Question(
                 f"Project '{project_name}' already exists. What would you like to do?",
@@ -3778,9 +3862,10 @@ def create_new_project():
         else:
             break
 
-    # Create project folder
+    # Create project folder with secure permissions
     project_folder = base_folder / project_name
     project_folder.mkdir(parents=True, exist_ok=True)
+    SecurityValidator.secure_file_permissions(project_folder, is_directory=True)
     boxed_message(f"Created new project folder: {project_folder}")
 
     # Ask for user identity
@@ -3793,6 +3878,21 @@ def create_new_project():
     else:
         rich_message(f"That's totally fine, we name you {user_name}", False)
         arrow_message("Hope you like it!")
+
+    # Ask about learning mode
+    arrow_message("\n📚 Learning Mode helps you understand commands before executing them!")
+    learning_choice = Question(
+        "Would you like to enable Learning Mode?",
+        ["Yes, enable Learning Mode", "No, skip Learning Mode"]
+    ).ask()
+
+    learning_mode_enabled = "Yes" in learning_choice
+
+    if learning_mode_enabled:
+        LearningMode.enable()
+        rich_message("✅ Learning Mode Enabled! You'll see command explanations and practice typing them.", False)
+    else:
+        rich_message("Learning Mode disabled. Commands will execute directly.", False)
 
     # Create initial data structure
     data = {
@@ -3808,7 +3908,8 @@ def create_new_project():
         "addons": [],
         "git_setup": False,
         "stack_scaffolding": False,
-        "addons_scaffolding": False
+        "addons_scaffolding": False,
+        "learning_mode": learning_mode_enabled
     }
 
     # Save data.json in project folder

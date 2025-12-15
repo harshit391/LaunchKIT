@@ -1,9 +1,8 @@
 import sys
 import json
 import shutil
-import sys
 import tempfile
-import subprocess  # Added for interactive commands
+import subprocess
 from pathlib import Path
 
 from launchkit.core.templates import *
@@ -11,20 +10,33 @@ from launchkit.utils.display_utils import (
     arrow_message,
     status_message,
 )
-from launchkit.utils.user_utils import run_command_with_output
+from launchkit.utils.user_utils import run_command_with_output, run_command_safe
+from launchkit.utils.security_utils import SecurityValidator
+from launchkit.utils.platform_utils import VirtualEnvUtils, PlatformDetector
 
 
 def run_command_interactively(command: str, cwd: Path) -> bool:
     """
     Run a command interactively, allowing user input.
     This does NOT capture stdout/stderr, passing them directly to the TTY.
+
+    SECURITY NOTE: This function still uses shell=True for compatibility with
+    interactive npm/npx commands that require complex shell processing.
+    Input validation is performed to mitigate command injection risks.
     """
     try:
+        # Basic validation to prevent obvious command injection
+        dangerous_patterns = [';', '&&', '||', '|', '`', '$(',  '>', '>>', '<']
+        for pattern in dangerous_patterns:
+            if pattern in command and not any(safe in command for safe in ['create vite', 'create-next-app', 'create svelte', 'nuxi', '@nestjs/cli', '@angular/cli']):
+                status_message(f"Command contains potentially dangerous pattern: {pattern}", False)
+                return False
+
         arrow_message(f"Running interactive command: {command}")
         print("Please follow the prompts from the CLI tool...")
-        # Use subprocess.run, inheriting stdin, stdout, and stderr
-        # This allows the user to interact with prompts
-        # shell=True is needed to process the command string as the shell would
+
+        # For interactive commands, we need shell=True for npm/npx to work properly
+        # This is a calculated risk for known safe commands only
         result = subprocess.run(command, cwd=cwd, shell=True, check=False)
 
         if result.returncode != 0:
@@ -39,10 +51,18 @@ def run_command_interactively(command: str, cwd: Path) -> bool:
 
 
 def _get_venv_executable(folder: Path, executable: str) -> str:
-    """Returns the platform-specific path to a virtual environment executable."""
-    if sys.platform.startswith("win"):
-        return str(folder / "venv" / "Scripts" / f"{executable}.exe")
-    return str(folder / "venv" / "bin" / executable)
+    """
+    Returns the platform-specific path to a virtual environment executable.
+
+    Args:
+        folder: Project folder containing venv
+        executable: Name of executable (e.g., 'python', 'pip')
+
+    Returns:
+        str: Full path to executable
+    """
+    venv_path = folder / "venv"
+    return str(VirtualEnvUtils.get_venv_executable(venv_path, executable))
 
 
 def cleanup_failed_scaffold(folder: Path) -> None:
@@ -1518,9 +1538,14 @@ def scaffold_project_complete_delete(folder: Path) -> bool:
         # Change permissions if needed (for Windows/Unix compatibility)
         def make_writable(path):
             try:
-                os.chmod(path, 0o777)
+                # SECURITY: Use appropriate permissions instead of 0o777
+                # 0o755 for directories, 0o644 for files
+                if os.path.isdir(path):
+                    os.chmod(path, 0o755)
+                else:
+                    os.chmod(path, 0o644)
             except Exception as ex:
-                print(f"Error while changing permissions: {ex}")
+                # Ignore permission errors on filesystems that don't support chmod
                 pass
 
         # Walk through all files and make them writable

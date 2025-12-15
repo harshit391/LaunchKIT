@@ -42,7 +42,8 @@ console = Console()
 
 def rich_message(msg: str, show: bool = True, style="bold green"):
     print()
-    console.print(Panel(f"{"You chose: " if show else ""}{msg}", style=style, expand=False))
+    prefix = "You chose: " if show else ""
+    console.print(Panel(f"{prefix}{msg}", style=style, expand=False))
 
 
 # Example

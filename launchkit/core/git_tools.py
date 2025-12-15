@@ -5,6 +5,8 @@ from pathlib import Path
 
 from launchkit.utils.display_utils import arrow_message, status_message, progress_message, exiting_program
 from launchkit.utils.scaffold_utils import cleanup_failed_scaffold
+from launchkit.utils.security_utils import SecurityValidator, CommandBuilder
+from launchkit.utils.learning_mode import LearningMode
 
 
 def setup_git(folder: Path):
@@ -28,10 +30,30 @@ def initialize_git_repo(project_path):
 
     try:
         arrow_message("Initializing git repository...")
-        subprocess.run(["git", "init"], cwd=project_path, check=True)
+
+        # Prepare command
+        git_init_cmd = CommandBuilder.build_git_command("init")
+
+        # Show learning mode explanation if enabled
+        if LearningMode.is_enabled():
+            LearningMode.interactive_command_execution(
+                git_init_cmd,
+                purpose="Initialize a new Git repository to start tracking your project's code changes"
+            )
+
+        # SECURITY: Use command array instead of shell=True
+        subprocess.run(
+            git_init_cmd,
+            cwd=project_path,
+            check=True,
+            shell=False
+        )
         status_message("Local Git repository initialized successfully.")
     except subprocess.CalledProcessError as e:
         status_message(f"Failed to initialize git repository: {e}", success=False)
+        return False
+    except Exception as e:
+        status_message(f"Unexpected error initializing git: {e}", success=False)
         return False
     return True
 
@@ -40,15 +62,53 @@ def create_initial_commit(project_path, msg="Initial commit"):
     """Create initial commit."""
 
     try:
+        # Validate commit message
+        if not msg or not isinstance(msg, str):
+            msg = "Initial commit"
+
+        # Remove potentially dangerous characters from commit message
+        msg = SecurityValidator.sanitize_command_arg(msg)
+
         arrow_message("Creating Initial commit..")
 
-        subprocess.run(["git", "add", "."], cwd=project_path, check=True)
+        # Prepare commands
+        git_add_cmd = CommandBuilder.build_git_command("add", ".")
+        git_commit_cmd = CommandBuilder.build_git_command("commit", "-m", msg)
 
-        subprocess.run(["git", "commit", "-m", msg], cwd=project_path, check=True)
+        # Show learning mode explanations if enabled
+        if LearningMode.is_enabled():
+            LearningMode.interactive_command_execution(
+                git_add_cmd,
+                purpose="Stage all files in the current directory to prepare them for commit"
+            )
+
+        # SECURITY: Use command arrays instead of shell=True
+        subprocess.run(
+            git_add_cmd,
+            cwd=project_path,
+            check=True,
+            shell=False
+        )
+
+        if LearningMode.is_enabled():
+            LearningMode.interactive_command_execution(
+                git_commit_cmd,
+                purpose=f"Save staged changes to repository history with message: '{msg}'"
+            )
+
+        subprocess.run(
+            git_commit_cmd,
+            cwd=project_path,
+            check=True,
+            shell=False
+        )
 
         status_message("Initial commit created successfully.")
     except subprocess.CalledProcessError as e:
         status_message(f"Failed to create initial commit: {e}", False)
+        return False
+    except Exception as e:
+        status_message(f"Unexpected error creating commit: {e}", False)
         return False
 
     return True

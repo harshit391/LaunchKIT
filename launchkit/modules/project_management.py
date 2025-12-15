@@ -21,6 +21,7 @@ from launchkit.utils.stack_utils import (
 from launchkit.utils.support_utils import deploy_with_docker, deploy_to_kubernetes, setup_automated_deployment, \
     show_manual_deployment_guide
 from launchkit.utils.user_utils import add_data_to_db, create_backup, rename_project
+from launchkit.utils.security_utils import SecurityValidator
 
 
 def choose_project_type() -> Any | None:
@@ -1038,15 +1039,24 @@ def reset_project_config(data, folder):
 def create_flask_production_config(folder):
     """Create production configuration for Flask projects."""
     try:
-        # Create a basic production config
+        # SECURITY: Generate a secure random secret key
+        secret_key = SecurityValidator.generate_secret_key()
+
+        # Create a basic production config - SECURE VERSION
         prod_config = '''import os
 from pathlib import Path
 
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
+    # SECURITY: Always require SECRET_KEY from environment
+    # Never use a default secret key in production!
+    SECRET_KEY = os.environ.get('SECRET_KEY')
+    if not SECRET_KEY:
+        raise ValueError("SECRET_KEY environment variable must be set!")
 
 class DevelopmentConfig(Config):
     DEBUG = True
+    # Allow default for development only
+    SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-key-for-development-only-do-not-use-in-prod')
 
 class ProductionConfig(Config):
     DEBUG = False
@@ -1061,6 +1071,41 @@ config = {
         config_file = folder / "config.py"
         if not config_file.exists():
             config_file.write_text(prod_config)
+            SecurityValidator.secure_file_permissions(config_file)
+
+        # SECURITY: Create/update .env file with secure secret key
+        env_file = folder / ".env"
+        env_exists = env_file.exists()
+
+        if not env_exists:
+            env_content = f'''# Flask Configuration
+# SECURITY: Keep this file secret! Never commit to version control!
+SECRET_KEY={secret_key}
+FLASK_ENV=development
+FLASK_DEBUG=1
+'''
+            env_file.write_text(env_content)
+            SecurityValidator.secure_secret_file_permissions(env_file)
+            arrow_message("Created .env file with secure SECRET_KEY")
+        else:
+            # Check if SECRET_KEY already exists in .env
+            env_content = env_file.read_text()
+            if 'SECRET_KEY=' not in env_content:
+                env_content += f'\n# Generated secure secret key\nSECRET_KEY={secret_key}\n'
+                env_file.write_text(env_content)
+                SecurityValidator.secure_secret_file_permissions(env_file)
+                arrow_message("Added secure SECRET_KEY to existing .env file")
+
+        # Ensure .env is in .gitignore
+        gitignore_file = folder / ".gitignore"
+        if gitignore_file.exists():
+            gitignore_content = gitignore_file.read_text()
+            if '.env' not in gitignore_content:
+                gitignore_content += '\n# Environment variables (contains secrets!)\n.env\n'
+                gitignore_file.write_text(gitignore_content)
+        else:
+            gitignore_content = '# Environment variables (contains secrets!)\n.env\n'
+            gitignore_file.write_text(gitignore_content)
 
         # Create requirements.txt if it doesn't exist
         req_file = folder / "requirements.txt"
@@ -1072,8 +1117,9 @@ gunicorn==21.2.0
             req_file.write_text(basic_requirements)
 
         status_message("Flask production configuration created!", True)
-        arrow_message("Created: config.py")
+        arrow_message("Created: config.py with secure configuration")
         arrow_message("Updated: requirements.txt")
+        arrow_message("IMPORTANT: .env file contains your SECRET_KEY - keep it secure!")
 
     except Exception as e:
         status_message(f"Failed to create Flask production config: {e}", False)
