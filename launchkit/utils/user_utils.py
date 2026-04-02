@@ -22,6 +22,23 @@ from launchkit.utils.que import Question
 from launchkit.utils.security_utils import SecurityValidator, CommandBuilder
 from launchkit.utils.learning_mode import LearningMode
 
+
+class CommandResult(tuple):
+    """Result of a command execution that is truthy/falsy based on success.
+
+    Can be used as a boolean (checks success) or unpacked as a tuple
+    (success, stdout, stderr).
+    """
+    def __new__(cls, success, stdout="", stderr=""):
+        instance = super().__new__(cls, (success, stdout, stderr))
+        instance.success = success
+        instance.stdout = stdout
+        instance.stderr = stderr
+        return instance
+
+    def __bool__(self):
+        return self.success
+
 # Possible user choices for identity
 user_identity = ["Yes, Sure", "Keep it Anonymous"]
 
@@ -202,13 +219,13 @@ def run_command_with_output(
             timeout=timeout,
             cwd=cwd,
         )
-        return result.returncode == 0, result.stdout, result.stderr
+        return CommandResult(result.returncode == 0, result.stdout, result.stderr)
     except subprocess.TimeoutExpired:
-        return False, "", f"Command timed out after {timeout} seconds"
+        return CommandResult(False, "", f"Command timed out after {timeout} seconds")
     except FileNotFoundError as e:
-        return False, "", f"Command not found: {e}"
+        return CommandResult(False, "", f"Command not found: {e}")
     except Exception as e:
-        return False, "", str(e)
+        return CommandResult(False, "", str(e))
 
 
 def run_command_safe(
@@ -269,15 +286,15 @@ def check_docker_containers(project_name: str) -> Dict[str, Any]:
     }
 
     # Check if Docker is available
-    success, _, _ = run_command("docker --version")
+    success, _, _ = run_command_with_output(["docker", "--version"])
     if not success:
         return docker_status
 
     docker_status["docker_available"] = True
 
     # Check for running containers
-    success, output, _ = run_command(
-        f"docker ps --format 'table {{.Names}}\\t{{.Image}}\\t{{.Status}}'"
+    success, output, _ = run_command_with_output(
+        ["docker", "ps", "--format", "table {{.Names}}\t{{.Image}}\t{{.Status}}"]
     )
     if success and output:
         lines = output.strip().split("\n")[1:]  # Skip header
@@ -286,8 +303,8 @@ def check_docker_containers(project_name: str) -> Dict[str, Any]:
                 docker_status["containers"].append(line.strip())
 
     # Check for images
-    success, output, _ = run_command(
-        f"docker images --format 'table {{.Repository}}\\t{{.Tag}}\\t{{.Size}}'"
+    success, output, _ = run_command_with_output(
+        ["docker", "images", "--format", "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"]
     )
     if success and output:
         lines = output.strip().split("\n")[1:]  # Skip header
@@ -311,15 +328,15 @@ def check_kubernetes_resources(
     }
 
     # Check if kubectl is available
-    success, _, _ = run_command("kubectl version --client=true")
+    success, _, _ = run_command_with_output(["kubectl", "version", "--client=true"])
     if not success:
         return k8s_status
 
     k8s_status["kubectl_available"] = True
 
     # Check deployments
-    success, output, _ = run_command(
-        f"kubectl get deployments -n {namespace} -o name"
+    success, output, _ = run_command_with_output(
+        ["kubectl", "get", "deployments", "-n", namespace, "-o", "name"]
     )
     if success and output:
         deployments = [
@@ -328,8 +345,8 @@ def check_kubernetes_resources(
         k8s_status["deployments"] = deployments
 
     # Check services
-    success, output, _ = run_command(
-        f"kubectl get services -n {namespace} -o name"
+    success, output, _ = run_command_with_output(
+        ["kubectl", "get", "services", "-n", namespace, "-o", "name"]
     )
     if success and output:
         services = [
@@ -338,7 +355,9 @@ def check_kubernetes_resources(
         k8s_status["services"] = services
 
     # Check pods
-    success, output, _ = run_command(f"kubectl get pods -n {namespace} -o name")
+    success, output, _ = run_command_with_output(
+        ["kubectl", "get", "pods", "-n", namespace, "-o", "name"]
+    )
     if success and output:
         pods = [
             pod.strip() for pod in output.split("\n") if project_name.lower() in pod.lower()
@@ -369,7 +388,9 @@ def inspect_docker_resource():
             container_choice = Question("Select container to inspect:", container_choices).ask()
             container_name = container_choice.split(" (")[0]
 
-            success, output, error = run_command_with_output(f"docker inspect {container_name}")
+            success, output, error = run_command_with_output(
+                ["docker", "inspect", container_name]
+            )
             if success:
                 boxed_message(f"Container Inspection: {container_name}")
                 print(output)
@@ -385,7 +406,9 @@ def inspect_docker_resource():
             image_choices = [f"{i['repository']}:{i['tag']}" for i in images]
             image_choice = Question("Select image to inspect:", image_choices).ask()
 
-            success, output, error = run_command_with_output(f"docker inspect {image_choice}")
+            success, output, error = run_command_with_output(
+                ["docker", "inspect", image_choice]
+            )
             if success:
                 boxed_message(f"Image Inspection: {image_choice}")
                 print(output)
@@ -598,9 +621,11 @@ def execute_commands_in_container():
     if command in ["/bin/bash", "/bin/sh"]:
         boxed_message(f"Starting interactive shell in {container_name}")
         print("Type 'exit' to return to LaunchKit")
-        subprocess.run(f"docker exec -it {container_name} {command}", shell=True)
+        subprocess.run(["docker", "exec", "-it", container_name, command])
     else:
-        success, output, error = run_command_with_output(f"docker exec {container_name} {command}")
+        success, output, error = run_command_with_output(
+            ["docker", "exec", container_name] + command.split()
+        )
         if success:
             boxed_message(f"Command Output from {container_name}")
             print(output)
@@ -721,16 +746,16 @@ def create_new_container_from_projects():
 
         compose_action = Question("Select Docker Compose action:", compose_options).ask()
 
-        cmd = ""
+        cmd = []
 
         if "Build and start" in compose_action:
-            cmd = f"docker-compose -f {compose_path} up --build"
+            cmd = ["docker-compose", "-f", str(compose_path), "up", "--build"]
         elif "Build only" in compose_action:
-            cmd = f"docker-compose -f {compose_path} build"
+            cmd = ["docker-compose", "-f", str(compose_path), "build"]
         elif "Start in detached" in compose_action:
-            cmd = f"docker-compose -f {compose_path} up --build -d"
+            cmd = ["docker-compose", "-f", str(compose_path), "up", "--build", "-d"]
         elif "View logs" in compose_action:
-            cmd = f"docker-compose -f {compose_path} up --build -d"
+            cmd = ["docker-compose", "-f", str(compose_path), "up", "--build", "-d"]
 
         boxed_message(f"Running Docker Compose for {project_choice}")
         success, output, error = run_command_with_output(cmd)
@@ -741,7 +766,7 @@ def create_new_container_from_projects():
 
             if "View logs" in compose_action:
                 input("\nPress Enter to view logs...")
-                subprocess.run(f"docker-compose -f {compose_path} logs", shell=True)
+                subprocess.run(["docker-compose", "-f", str(compose_path), "logs"])
         else:
             status_message(f"Docker Compose failed: {error}", False)
 
@@ -1093,9 +1118,11 @@ def execute_commands_in_pod():
     if command in ["/bin/bash", "/bin/sh"]:
         boxed_message(f"Starting interactive shell in {pod_name}/{container}")
         print("Type 'exit' to return to LaunchKit")
-        subprocess.run(f"kubectl exec -it {pod_name} -n {pod_namespace} -c {container} -- {command}", shell=True)
+        subprocess.run(["kubectl", "exec", "-it", pod_name, "-n", pod_namespace, "-c", container, "--", command])
     else:
-        success, output, error = run_command_with_output(f"kubectl exec {pod_name} -n {pod_namespace} -c {container} -- {command}")
+        success, output, error = run_command_with_output(
+            ["kubectl", "exec", pod_name, "-n", pod_namespace, "-c", container, "--"] + command.split()
+        )
         if success:
             boxed_message(f"Command Output from {pod_name}/{container}")
             print(output)
@@ -1145,7 +1172,10 @@ def port_forward_kubernetes():
         if local_port.isdigit() and remote_port.isdigit():
             boxed_message(f"Port forwarding {local_port} -> {pod_name}:{remote_port}")
             print("Press Ctrl+C to stop port forwarding")
-            subprocess.run(f"kubectl port-forward pod/{pod_name} -n {pod_namespace} {local_port}:{remote_port}", shell=True)
+            subprocess.run([
+                "kubectl", "port-forward", f"pod/{pod_name}",
+                "-n", pod_namespace, f"{local_port}:{remote_port}"
+            ])
         else:
             status_message("Invalid port numbers.", False)
 
@@ -1166,7 +1196,10 @@ def port_forward_kubernetes():
         if local_port.isdigit() and remote_port.isdigit():
             boxed_message(f"Port forwarding {local_port} -> service/{service_name}:{remote_port}")
             print("Press Ctrl+C to stop port forwarding")
-            subprocess.run(f"kubectl port-forward service/{service_name} -n {service_namespace} {local_port}:{remote_port}", shell=True)
+            subprocess.run([
+                "kubectl", "port-forward", f"service/{service_name}",
+                "-n", service_namespace, f"{local_port}:{remote_port}"
+            ])
         else:
             status_message("Invalid port numbers.", False)
 
@@ -2162,19 +2195,19 @@ def global_docker_management():
             log_option = Question("Select log option:", log_options).ask()
 
             if "50 lines" in log_option:
-                cmd = f"docker logs --tail 50 {container_name}"
+                cmd = ["docker", "logs", "--tail", "50", container_name]
             elif "100 lines" in log_option:
-                cmd = f"docker logs --tail 100 {container_name}"
+                cmd = ["docker", "logs", "--tail", "100", container_name]
             elif "Follow" in log_option:
-                cmd = f"docker logs -f {container_name}"
+                cmd = ["docker", "logs", "-f", container_name]
             else:
-                cmd = f"docker logs {container_name}"
+                cmd = ["docker", "logs", container_name]
 
             boxed_message(f"Logs for {container_name}")
 
             # For follow logs, don't capture output
             if "Follow" in log_option:
-                subprocess.run(cmd, shell=True)
+                subprocess.run(cmd)
             else:
                 success, output, error = run_command_with_output(cmd)
                 if success:
@@ -2271,19 +2304,19 @@ def global_kubernetes_management():
             log_option = Question("Select log option:", log_options).ask()
 
             if "50 lines" in log_option:
-                cmd = f"kubectl logs --tail=50 {pod_name} -n {namespace}"
+                cmd = ["kubectl", "logs", f"--tail=50", pod_name, "-n", namespace]
             elif "100 lines" in log_option:
-                cmd = f"kubectl logs --tail=100 {pod_name} -n {namespace}"
+                cmd = ["kubectl", "logs", f"--tail=100", pod_name, "-n", namespace]
             elif "Follow" in log_option:
-                cmd = f"kubectl logs -f {pod_name} -n {namespace}"
+                cmd = ["kubectl", "logs", "-f", pod_name, "-n", namespace]
             else:
-                cmd = f"kubectl logs {pod_name} -n {namespace}"
+                cmd = ["kubectl", "logs", pod_name, "-n", namespace]
 
             boxed_message(f"Logs for {pod_name} in {namespace}")
 
             # For follow logs, don't capture output
             if "Follow" in log_option:
-                subprocess.run(cmd, shell=True)
+                subprocess.run(cmd)
             else:
                 success, output, error = run_command_with_output(cmd)
                 if success:

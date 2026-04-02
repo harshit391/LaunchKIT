@@ -12,3 +12,6 @@ dist
 *.spec
 
 launchkit.egg-info
+
+*.md
+!README.md

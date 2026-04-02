@@ -115,9 +115,58 @@ def create_initial_commit(project_path, msg="Initial commit"):
 
 def add_git_ignore_file(project_path):
 
-    """Adds a basic gitignore files"""
+    """Adds a basic gitignore file with common patterns."""
 
-    gitignore_content = """Sample Git Ignore File"""
+    gitignore_content = """# Dependencies
+node_modules/
+venv/
+env/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+build/
+dist/
+.next/
+out/
+*.egg-info/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+.nyc_output/
+
+# LaunchKIT
+data.json
+launchkit_backup/
+PROJECT_SUMMARY.md
+"""
 
     gitignore_path = os.path.join(project_path, ".gitignore")
     with open(gitignore_path, "w") as f:

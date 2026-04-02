@@ -1,4 +1,5 @@
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -680,7 +681,7 @@ def build_production(data, folder):
             else:
                 # Regular React/Node.js build
                 progress_message("Building React/Node.js application...")
-                result = subprocess.run(["npm", "run", "build"], cwd=folder, capture_output=True, text=True, shell=True)
+                result = subprocess.run(["npm", "run", "build"], cwd=folder, capture_output=True, text=True)
                 if result.returncode == 0:
                     status_message("Production build completed successfully!", True)
                     arrow_message("Build files are typically in the 'build' or 'dist' folder")
@@ -748,20 +749,20 @@ def run_tests(data, folder):
                     status_message("No test configuration found", False)
                     return
 
-                result = subprocess.run(cmd, cwd=folder, capture_output=True, text=True, shell=True)
+                result = subprocess.run(cmd, cwd=folder, capture_output=True, text=True)
 
                 if result.returncode == 0:
                     status_message("All tests passed!", True)
                     if result.stdout:
                         display_test_output(result.stdout)
-                    else:
-                        status_message("Some tests failed!", False)
-                        # Print both stdout and stderr for comprehensive error reporting
-                        if result.stdout:
-                            print(result.stdout)
-                        if result.stderr:
-                            status_message("Error output:", False)
-                            arrow_message(result.stderr.strip())
+                else:
+                    status_message("Some tests failed!", False)
+                    # Print both stdout and stderr for comprehensive error reporting
+                    if result.stdout:
+                        print(result.stdout)
+                    if result.stderr:
+                        status_message("Error output:", False)
+                        arrow_message(result.stderr.strip())
 
         elif is_python_based_stack(stack):
             run_python_tests(folder)
@@ -812,7 +813,6 @@ def run_tests(data, folder):
 
 def run_python_tests(folder):
     """Run Python tests using pytest or unittest."""
-    cmd = []
     if (folder / "pytest.ini").exists() or (folder / "tests").exists():
         progress_message("Running pytest...")
         # Add -v for verbosity to get more details on failure
@@ -820,10 +820,6 @@ def run_python_tests(folder):
     else:
         progress_message("Running unittest...")
         cmd = ["python", "-m", "unittest", "discover", "tests"]
-
-    if not cmd:
-        status_message("No Python test setup (pytest.ini or /tests folder) found.", False)
-        return
 
     result = subprocess.run(cmd, cwd=folder, capture_output=True, text=True)
 

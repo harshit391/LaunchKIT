@@ -23,6 +23,9 @@ class Question:
             ('disabled', 'fg:#858585 italic')
         ])).ask()
 
+        if user_choice is None:
+            raise KeyboardInterrupt("User cancelled selection")
+
         rich_message(user_choice)
 
         return user_choice

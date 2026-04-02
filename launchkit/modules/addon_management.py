@@ -105,17 +105,17 @@ def get_addon_dependencies(addon_name: str, stack: str, framework: Optional[str]
                 elif isinstance(dependencies[key], dict):
                     dependencies[key].update(source[key])
 
-    # Determine platform (node or python)
-    platform = None
+    # Determine stack platform (node or python)
+    stack_platform = None
     if is_node_based_stack(stack):
-        platform = "node"
+        stack_platform = "node"
     elif is_python_based_stack(stack):
-        platform = "python"
+        stack_platform = "python"
 
-    if not platform or platform not in spec:
+    if not stack_platform or stack_platform not in spec:
         return dependencies
 
-    platform_spec = spec[platform]
+    platform_spec = spec[stack_platform]
 
     # Use selected framework or 'default'
     choice_key = framework if framework in platform_spec else "default"
@@ -123,7 +123,7 @@ def get_addon_dependencies(addon_name: str, stack: str, framework: Optional[str]
         merge_deps(platform_spec[choice_key])
 
     # Handle special extras for React/Next.js
-    if platform == "node":
+    if stack_platform == "node":
         if is_react_based_stack(stack):
             react_extras_key = f"{choice_key}_react_extras" if framework else "react_extras"
             if react_extras_key in platform_spec:
@@ -150,7 +150,7 @@ def _run_npm_command(folder: Path, command: List[str], description: str = ""):
             command,
             cwd=folder,
             check=True,
-            shell=True
+            shell=False
         )
         return True
     except subprocess.CalledProcessError as e:

@@ -28,7 +28,7 @@ def main():
             data, folder = handle_user_data()
 
             # If the user exits from the welcome screen, data and folder will be None
-            if not data and not folder:
+            if data is None and folder is None:
                 break  # Exit the while loop and the application
 
             # If user selects a project, process it

@@ -19,7 +19,8 @@ from launchkit.utils.que import Question
 from launchkit.utils.stack_utils import is_fullstack_stack
 
 running_processes = {}
-stdout_lock = threading.Lock()  # Add lock for stdout
+process_lock = threading.Lock()  # Lock for running_processes dict access
+stdout_lock = threading.Lock()  # Lock for stdout
 
 from launchkit.utils.enum_utils import STACK_CONFIG
 
@@ -62,13 +63,14 @@ def _monitor_server_startup_async(process_name):
             break  # Stop trying on a request exception
 
     # Update the process info with startup status
-    if process_name in running_processes:
-        running_processes[process_name]['startup_complete'] = True
-        running_processes[process_name]['startup_success'] = server_ready and process.poll() is None
+    with process_lock:
+        if process_name in running_processes:
+            running_processes[process_name]['startup_complete'] = True
+            running_processes[process_name]['startup_success'] = server_ready and process.poll() is None
 
-        if not running_processes[process_name]['startup_success']:
-            # Mark as failed but keep in dict temporarily for error display
-            running_processes[process_name]['startup_failed'] = True
+            if not running_processes[process_name]['startup_success']:
+                # Mark as failed but keep in dict temporarily for error display
+                running_processes[process_name]['startup_failed'] = True
 
 
 def run_dev_server(data, folder):
@@ -244,9 +246,10 @@ def run_server_background(server_config, data):
         env_vars = server_config.get('env_vars', {})
         process_name = f"dev_server_{server_config.get('name', 'default')}"
 
-        if process_name in running_processes and running_processes[process_name]['process'].poll() is None:
-            # It's already running, which is fine
-            return process_name
+        with process_lock:
+            if process_name in running_processes and running_processes[process_name]['process'].poll() is None:
+                # It's already running, which is fine
+                return process_name
 
         print(f"Location:- ({server_config['url']})")
         print()
@@ -270,30 +273,32 @@ def run_server_background(server_config, data):
             shell=is_windows
         )
 
-        running_processes[process_name] = {
-            'process': process,
-            'command': command,
-            'folder': folder,
-            'url': server_url,
-            'project_name': data.get("project_name", "Unknown"),
-            'config': server_config,
-            'logs': deque(maxlen=200),
-            'startup_complete': False,
-            'startup_success': False,
-            'startup_failed': False
-        }
+        with process_lock:
+            running_processes[process_name] = {
+                'process': process,
+                'command': command,
+                'folder': folder,
+                'url': server_url,
+                'project_name': data.get("project_name", "Unknown"),
+                'config': server_config,
+                'logs': deque(maxlen=200),
+                'startup_complete': False,
+                'startup_success': False,
+                'startup_failed': False
+            }
 
         # Start a thread to *only* capture logs. No prints, no status.
         def capture_logs():
             try:
                 if process.stdout:
                     for line in iter(process.stdout.readline, ''):
-                        if process_name in running_processes:
-                            running_processes[process_name]['logs'].append(line.strip())
-                        else:
-                            break  # Process was removed
-            except:
-                pass  # Process terminated
+                        with process_lock:
+                            if process_name in running_processes:
+                                running_processes[process_name]['logs'].append(line.strip())
+                            else:
+                                break  # Process was removed
+            except (OSError, ValueError):
+                pass  # Process terminated or stream closed
 
         log_thread = threading.Thread(target=capture_logs, daemon=True)
         log_thread.start()

@@ -106,14 +106,13 @@ def _install_testing_deps_node(folder: Path, framework: str = "jest") -> bool:
 
         if framework == "jest":
             # Install Jest and relevant testing libraries
-            if framework == "jest":
-                deps = [
-                    "jest", "@testing-library/jest-dom", "@testing-library/vue",
-                    "@testing-library/svelte", "jest-environment-jsdom", "@vue/vue3-jest"
-                ]
-                command = f"npm install --save-dev {' '.join(deps)}"
-                if not run_command_with_output(command, cwd=folder):
-                    return False
+            deps = [
+                "jest", "@testing-library/jest-dom", "@testing-library/vue",
+                "@testing-library/svelte", "jest-environment-jsdom", "@vue/vue3-jest"
+            ]
+            command = f"npm install --save-dev {' '.join(deps)}"
+            if not run_command_with_output(command, cwd=folder):
+                return False
         elif framework == "vitest":
             # Install Vitest
             if not run_command_with_output(
