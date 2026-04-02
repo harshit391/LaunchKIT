@@ -15,3 +15,7 @@ launchkit.egg-info
 
 *.md
 !README.md
+
+.ruff_cache
+
+.claude

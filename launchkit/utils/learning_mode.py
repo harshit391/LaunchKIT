@@ -4,6 +4,7 @@ Educational feature that helps users understand commands by showing explanations
 and letting them practice typing commands themselves.
 """
 import os
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -15,6 +16,17 @@ from rich.table import Table
 from rich import box
 
 console = Console()
+
+
+def _format_command_for_display(command: List[str]) -> str:
+    """Join command parts for display, quoting arguments that contain spaces."""
+    parts = []
+    for part in command:
+        if " " in part or "\t" in part:
+            parts.append(shlex.quote(part))
+        else:
+            parts.append(part)
+    return " ".join(parts)
 
 
 class CommandExplainer:
@@ -180,7 +192,7 @@ class CommandExplainer:
         base_cmd = command[0]
         explanation = {
             "base_command": base_cmd,
-            "full_command": " ".join(command),
+            "full_command": _format_command_for_display(command),
             "description": "",
             "breakdown": [],
         }
@@ -242,8 +254,13 @@ class CommandExplainer:
         """
         explanation = CommandExplainer.explain_command(command)
 
+        # Handle error case (e.g., empty command)
+        if "error" in explanation:
+            console.print(f"\n[bold red]Cannot explain command: {explanation['error']}[/bold red]\n")
+            return
+
         # Create command display
-        command_str = " ".join(command)
+        command_str = _format_command_for_display(command)
 
         console.print()
         console.print(Panel.fit(
@@ -290,29 +307,49 @@ class CommandExplainer:
 
 
 class LearningMode:
-    """Manages learning mode functionality"""
+    """Manages learning mode functionality.
 
-    LEARNING_MODE_FILE = Path.home() / ".launchkit_learning_mode"
+    Delegates all state management to LearnerModeManager for a single
+    source of truth using platform-appropriate paths.
+    """
+
+    # Legacy file path from older versions — cleaned up on enable/disable
+    _LEGACY_FILE = Path.home() / ".launchkit_learning_mode"
+    _cached_manager = None
+
+    @staticmethod
+    def _manager():
+        """Get or create a cached LearnerModeManager instance."""
+        if LearningMode._cached_manager is None:
+            from launchkit.utils.learner_utils import LearnerModeManager
+            LearningMode._cached_manager = LearnerModeManager()
+        return LearningMode._cached_manager
+
+    @staticmethod
+    def _cleanup_legacy_file():
+        """Remove the legacy state file from older versions if it exists."""
+        if LearningMode._LEGACY_FILE.exists():
+            try:
+                LearningMode._LEGACY_FILE.unlink()
+            except OSError:
+                pass
 
     @staticmethod
     def is_enabled() -> bool:
-        """Check if learning mode is enabled"""
-        return LearningMode.LEARNING_MODE_FILE.exists()
+        """Check if learning mode is enabled (single source of truth)."""
+        return LearningMode._manager().is_learner_mode_enabled()
 
     @staticmethod
     def enable():
         """Enable learning mode"""
-        LearningMode.LEARNING_MODE_FILE.touch()
-        console.print("\n[bold green]✅ Learning Mode Enabled![/bold green]")
-        console.print("[dim]You'll now see explanations and practice commands before execution.[/dim]\n")
+        LearningMode._manager().enable_learner_mode()
+        LearningMode._cleanup_legacy_file()
 
     @staticmethod
     def disable():
         """Disable learning mode"""
-        if LearningMode.LEARNING_MODE_FILE.exists():
-            LearningMode.LEARNING_MODE_FILE.unlink()
-        console.print("\n[bold yellow]Learning Mode Disabled[/bold yellow]")
-        console.print("[dim]Commands will execute directly without practice.[/dim]\n")
+        LearningMode._manager().disable_learner_mode()
+        LearningMode._cleanup_legacy_file()
 
     @staticmethod
     def toggle():
@@ -345,7 +382,7 @@ class LearningMode:
                 console.print("[dim]⏩ Skipping practice, executing command...[/dim]\n")
                 return True
 
-            if user_input == expected_command:
+            if " ".join(user_input.split()) == " ".join(expected_command.split()):
                 console.print("[bold green]✅ Perfect! Command is correct.[/bold green]\n")
                 time.sleep(0.5)
                 return True
@@ -386,7 +423,7 @@ class LearningMode:
         CommandExplainer.display_command_explanation(command, purpose)
 
         # Let user practice
-        command_str = " ".join(command)
+        command_str = _format_command_for_display(command)
         success = LearningMode.get_user_command_input(command_str)
 
         if success and auto_execute:

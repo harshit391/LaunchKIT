@@ -3976,6 +3976,11 @@ def load_existing_project(project_name):
         # Update selected_folder to current project folder path
         data["selected_folder"] = str(project_folder)
 
+        # Restore learning mode state from saved project data
+        if data.get("learning_mode", False):
+            if not LearningMode.is_enabled():
+                LearningMode.enable()
+
         boxed_message(f"Loaded existing project: {project_name}")
         arrow_message(f"Welcome back, {data.get('user_name', 'Unknown')}!")
 

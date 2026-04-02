@@ -6,6 +6,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](#cross-platform-support)
 [![Security](https://img.shields.io/badge/Security-Hardened-green.svg)](#security-features)
 [![Learning Mode](https://img.shields.io/badge/Learning%20Mode-Interactive-orange.svg)](#learning-mode)
+[![Version](https://img.shields.io/badge/Version-0.2.0-brightgreen.svg)](#)
 
 ---
 
@@ -55,34 +56,39 @@ LaunchKIT guides developers through an **interactive, menu-driven wizard**, allo
 
 ## 2. What's New
 
-### 🎉 Major Updates in Latest Release
+### v0.2.0 - Bug Fixes and Learning Mode Improvements
+
+#### 🐛 Critical Bug Fixes
+- ✅ **Missing `requests` dependency** - Added to requirements, fixing import crash
+- ✅ **Command error detection** - `run_command_with_output` now correctly reports failures via `CommandResult` class
+- ✅ **Ctrl+C crash prevention** - Menu selections gracefully handle user cancellation
+- ✅ **Proper `.gitignore`** - Generated projects now ignore `node_modules/`, `venv/`, `.env`, etc.
+- ✅ **Command injection hardening** - Remaining `shell=True` calls with user input converted to argument arrays
+- ✅ **Test result reporting** - Fixed wrong indentation that showed "tests failed" on success
+- ✅ **Package discovery** - `pyproject.toml` now auto-discovers all subpackages for pip install
+- ✅ **Thread safety** - `running_processes` dict protected with `process_lock` for background server threads
+
+#### 🎓 Learning Mode (Fixed and Improved)
+- ✅ **Unified state management** - `LearningMode` now delegates to `LearnerModeManager` (single source of truth)
+- ✅ **State restoration on project load** - Opening a project with learning mode re-enables it automatically
+- ✅ **Proper command display** - Arguments with spaces are now quoted for clarity
+- ✅ **Flexible practice matching** - Extra whitespace in typed commands no longer causes false failures
+- ✅ **Crash prevention** - Empty command explanations handled gracefully
+- ✅ **Legacy file cleanup** - Old `~/.launchkit_learning_mode` files removed automatically
 
 #### 🔒 Security Hardening (All Critical Vulnerabilities Fixed)
-- ✅ **Command Injection Prevention** - No more `shell=True` risks
+- ✅ **Command Injection Prevention** - No more `shell=True` with user input
 - ✅ **Path Traversal Protection** - Validated paths and project names
 - ✅ **Secure Secret Generation** - Cryptographically secure random keys
 - ✅ **Input Validation** - All user inputs sanitized
 - ✅ **Safe File Permissions** - Proper permission model (Unix)
 
-#### 🎓 Learning Mode (NEW!)
-- ✅ **Interactive Command Learning** - Understand before executing
-- ✅ **48+ Commands Explained** - Git, Docker, Kubernetes, npm, pip
-- ✅ **Practice Mode** - Type commands yourself to learn
-- ✅ **Beautiful Visual Display** - Color-coded breakdowns with Rich library
-- ✅ **Optional** - Enable/disable anytime
-
-#### 🖥️ Cross-Platform Support (Enhanced)
+#### 🖥️ Cross-Platform Support
 - ✅ **Windows 10/11** - Full support with Windows Terminal
 - ✅ **macOS** - Intel and Apple Silicon (M1/M2)
 - ✅ **Linux** - All major distributions (Ubuntu, Fedora, Arch, etc.)
 - ✅ **Platform Detection** - Automatic platform-specific handling
 - ✅ **Virtual Environment** - Proper venv handling on all platforms
-
-#### 📚 Documentation (Reorganized)
-- ✅ **Single Documentation File** - DOCUMENTATION.md (40 KB)
-- ✅ **Complete Coverage** - Installation, security, learning mode
-- ✅ **Navigation Helper** - DOCS_INDEX.md for quick reference
-- ✅ **Installation Test** - `test_install.py` for verification
 
 ---
 
@@ -637,11 +643,11 @@ python main.py
 ### Python Libraries
 - **[Rich](https://rich.readthedocs.io/)** - Terminal formatting and colors
 - **[Questionary](https://questionary.readthedocs.io/)** - Interactive CLI prompts
+- **[Requests](https://requests.readthedocs.io/)** - HTTP library for server health checks
 - **[PyGithub](https://pygithub.readthedocs.io/)** - GitHub API integration
 - **[Docker SDK](https://docker-py.readthedocs.io/)** - Docker automation
 - **[Jinja2](https://jinja.palletsprojects.com/)** - Template rendering
 - **[PyYAML](https://pyyaml.org/)** - YAML parsing
-- **[Pytest](https://pytest.org/)** - Testing framework
 
 ### Custom Modules
 - **security_utils.py** - Security validation and safe operations
@@ -728,10 +734,10 @@ CommandExplainer.COMMAND_EXPLANATIONS["your-command"] = {
 
 ## 📊 Project Statistics
 
-- **Lines of Code**: 10,000+
+- **Lines of Code**: 16,000+
 - **Supported Stacks**: 20+
 - **Commands Explained**: 48+
-- **Security Fixes**: 4 critical vulnerabilities eliminated
+- **Bug Fixes**: 20+ bugs identified and resolved
 - **Platforms Supported**: Windows, macOS, Linux
 - **Documentation**: 40+ KB comprehensive guide
 - **Python Version**: 3.8+ required
@@ -810,7 +816,7 @@ python test_install.py
 
 **Made with 💓 by Harshit Singla and contributors**
 
-**Version**: 1.0.0 | **Status**: Production Ready ✅ | **Platform**: Cross-Platform 🖥️
+**Version**: 0.2.0 | **Status**: Production Ready ✅ | **Platform**: Cross-Platform 🖥️
 
 ---
 
@@ -818,13 +824,13 @@ python test_install.py
 
 | Feature | Status | Details |
 |---------|--------|---------|
-| **Security** | ✅ Hardened | All vulnerabilities fixed |
-| **Learning Mode** | ✅ Active | 48+ commands explained |
+| **Security** | ✅ Hardened | Command injection, path traversal fixed |
+| **Learning Mode** | ✅ Active | 48+ commands, unified state management |
 | **Cross-Platform** | ✅ Full | Windows, macOS, Linux |
-| **Documentation** | ✅ Complete | 40+ KB comprehensive |
+| **Bug Fixes** | ✅ 20+ | Critical and high-severity bugs resolved |
 | **Tech Stacks** | ✅ 20+ | Frontend, backend, fullstack |
 | **DevOps** | ✅ Ready | Docker, K8s, CI/CD |
-| **Testing** | ✅ Integrated | Jest, Pytest, Playwright |
+| **Thread Safety** | ✅ Added | Background server process management |
 
 ---
 
